@@ -1,6 +1,8 @@
 module:
     _target_: src.datamodules.blank_datamodule.DataModule
 dl:
-    batch_size: 300
+    # This will be the no. of trajectories
+    # Less variance when higher, but general trend is loss goes up...
+    batch_size: 16
     shuffle: true
 ndim: 1

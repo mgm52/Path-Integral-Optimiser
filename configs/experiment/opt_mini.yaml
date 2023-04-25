@@ -23,17 +23,41 @@ print_config: false
 
 trainer:
   min_epochs: 1
-  max_epochs: 10
-  max_steps: 300
-  log_every_n_steps: 20
+  max_epochs: -1
+  max_steps: -1
+  log_every_n_steps: 1
+  # default 0.0 (off)
+  gradient_clip_val: 0.0
+  # default "norm", alternatively "value"
+  gradient_clip_algorithm: "norm"
 
   weights_summary: null
+  resume_from_checkpoint: null
+
+model:
+  lr: 0.01
+  # This is the batch size in the task
+  batch_size: 100
+  sde_model:
+    f_format: "f"
+  optimizer: "pis"
+  sampling_repeats_per_data: 8
+
+datamodule:
+  dataset:
+    sigma: 0.01
+  dl:
+    # This will be the no. of trajectories
+    # In theory: higher==lower variance, learn faster
+    batch_size: 32
 
 callbacks:
-  sample:
-    _target_: src.callbacks.opt_mini_cb.OptMiniSample
-    every_n: 25
+  #sample:
+    #_target_: src.callbacks.opt_mini_cb.OptMiniSample
+    #every_n: 25
+  lr:
+    _target_: src.callbacks.lr.LinearScheduler
 
 logger:
   wandb:
-    name: pis-${name}
+    name: null #pis-${name}

@@ -21,10 +21,16 @@ class OUGaussianMixture(BaseSet):
         self.data = th.tensor([0.0])  # pylint: disable= not-callable
 
     # returns negative log probability - i.e. the "discriminator" loss
+    #   input in shape (batch_size, *data_shape)
+    #   output in shape (batch_size)
     def get_gt_disc(self, x):
+        #print(f"get_gt_disc Returning shape {self.gmm.log_prob(x).flatten().shape} for input x shape {x.shape}")
         return -self.gmm.log_prob(x).flatten()
 
+    # just used for visualization purposes
+    #   output in shape (batch_size, *data_shape)
     def sample(self, batch_size):
+        print(f"sample Returning shape {self.gmm.sample((batch_size,)).shape} for batch size {batch_size}")
         return self.gmm.sample((batch_size,))
 
     def viz_pdf(self, fsave="ou-density.png"):

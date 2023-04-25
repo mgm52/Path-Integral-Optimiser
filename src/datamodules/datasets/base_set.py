@@ -61,6 +61,8 @@ class BaseSet(abc.ABC, Dataset):
         weight_gauss = self.annealing_temp
         return linear_intepolate_energy(self.get_gt_disc, x, weight_gauss=weight_gauss)
 
+    # gradient of sum of negative log likelihood in target distribution with respect to each x
+    # i.e. nabla log(mu(x)). used in PIS-grad net.
     def score(self, x):
         with th.no_grad():
             copy_x = x.detach().clone()

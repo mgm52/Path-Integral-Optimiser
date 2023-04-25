@@ -2,7 +2,8 @@ import torch as th
 
 # pylint: disable=too-many-arguments
 
-
+# Currently, this is the only regularization term (dreg) in use.
+# It's given control (i.e. u_t(x)) for dx, added to control*g_coef.
 def quad_reg(x, dx, context):
     del x, context
     dx = dx.view(dx.shape[0], -1)
@@ -10,7 +11,12 @@ def quad_reg(x, dx, context):
 
 
 def loss_pis(sdeint_fn, ts, nll_target_fn, nll_prior_fn, y0, n_reg):
+    # sdeint_fn runs torchsde.sdeint(sde, y0, ts)
+        # where y0 is start state, ts is trajectory timestamps
+    # ys has shape (len(ts), batch_size, dim)
+        # where dim is the state size (i.e. data_ndim + n_reg)
     ys = sdeint_fn(y0, ts)
+    # y1 is the terminal state
     y1 = ys[-1]
     dim = y1.shape[1]
 

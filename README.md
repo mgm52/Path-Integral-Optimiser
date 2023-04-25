@@ -48,3 +48,18 @@ There are some [results](https://wandb.ai/qinsheng/pub_pis?workspace=user-qinshe
 
 - [sde-sampler](https://gitlab.com/qsh.zh/sde-sampler/-/tree/rings) Uncleaned code used for experiments in paper.
 - SDE parameters `dt,g` are modified due to [the issue](https://github.com/google-research/torchsde/issues/109).
+
+## Ideas & Experiments
+- Recursive training: could I train a PIS-based optimizer using a PIS-based optimizer, instead of e.g. Adam?
+- Integrate D-Adaptation
+  - For PIS learning
+  - For finding optimal sigma value?
+- PIS non-grad net could perform better due to grad computation being expensive
+  - Or, could I use some cheap heuristic grads somehow?
+  - Compare using different minibatches per grad computation vs same minibatch
+- Methods to improve PIS's stability
+  - Decaying sigma
+  - Gradient clipping
+  - Stochastic Weight Averaging?
+- Can we somehow initialize PIS to produce weights that correspond with e.g. a xavier initilisation of task model? Solves issue PIS paper mentions of not knowing good prior to use.
+  - Though note that an advantage of PIS seems to be that it seems more resiliant to initialisation, maybe? Which means it works on black box models where good init is unclear?

@@ -48,6 +48,7 @@ class BaseModel(LightningModule):
         self.sde_model = hyd_instantiate(
             self.cfg.sde_model, f_func, g_func, t_end=self.t_end
         )
+        # This will call torchsde.sdeint. The function uses sde_model's g and f functions.
         self.sdeint_fn = hyd_instantiate(self.cfg.sdeint, self.sde_model, dt=self.dt)
 
     def on_train_start(self) -> None:
@@ -79,11 +80,24 @@ class BaseModel(LightningModule):
         See examples here:
             https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
         """
-        return torch.optim.Adam(
+        optimizer = torch.optim.Adam(
             params=self.sde_model.parameters(),
             lr=self.cfg.lr,
             weight_decay=self.cfg.weight_decay,
         )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    optimizer=optimizer,
+                    mode="min",
+                    factor=0.5,
+                    patience=10, #patience=6,
+                    verbose=True,
+                ),
+                "monitor": "loss"
+            }
+        }
 
     def sample_n(self, batch_size):
         y0 = self.sde_model.zeros(batch_size)

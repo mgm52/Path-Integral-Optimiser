@@ -38,7 +38,6 @@ def generate_samples_loss(
         x, cur_uw_term = sde_model.step_with_uw(cur_t, x, dt)
         uw_term += cur_uw_term
         rtn_traj.append(x[:30, :-1].cpu())
-    print(f"State min is {x.min()}, max is {x.max()}")
     state = x[:, :-1]
     disc_loss, cur_idx = [], 0
     for cur_len_batch in num_to_groups(num_sample, 256):
