@@ -1,5 +1,11 @@
 class BaseTask:
-    def dataset(self):
+    def training_dataset(self):
+        raise NotImplementedError
+
+    def validation_dataset(self):
+        raise NotImplementedError
+
+    def test_dataset(self):
         raise NotImplementedError
 
     def loss(self, y, GT):
@@ -12,4 +18,7 @@ class BaseTask:
         raise NotImplementedError
     
     def gtsize(self):
+        raise NotImplementedError
+    
+    def viz(self, ts_model, w, model_name, fig_path=""):
         raise NotImplementedError

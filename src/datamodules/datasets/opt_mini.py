@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import torch as th
 import torch.distributions as D
 from jamtorch.utils import as_numpy
@@ -32,14 +33,16 @@ class OptMini(BaseSet):
         super().__init__(len_data)
         self.sigma = sigma # treat as a kind of learning rate for optimizer
         # used to specify input shape:
-        self.data = th.tensor([0.0, 0.0])  # pylint: disable= not-callable
+        self.data = th.tensor([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # pylint: disable= not-callable
 
     # V should be normalised to have min 0 (otherwise we need unusual sigma values)
     # it should be of shape (trajectories) - i.e. (x.shape[0])
     def V(self, x):
-        data, GT = dataset()
-        y = forward(data, x)
-        return loss(y, GT)
+        #data, GT = dataset()
+        #y = forward(data, x)
+        #return loss(y, GT)
+        
+        return th.sum(100 * (x[:, 1:] - x[:, :-1] ** 2) ** 2 + (1 - x[:, :-1]) ** 2, axis=1)
         #return th.pow(x-0.4,2) * (0.2 + th.pow(x-2,2))
         #return 3.308 + (x + th.sin(x)) * th.pow(x - 2, 3)
         #return th.pow(x-3, 2)
@@ -48,11 +51,13 @@ class OptMini(BaseSet):
     #   input in shape (batch_size, *data_shape)
     #   output in shape (batch_size)
     def get_gt_disc(self, x):
+        # C shouldnt matter if we're using schrodinger-follmer
         C = 1.0
         #p = th.exp(-self.V(x) / self.sigma) / C
         #return -th.log(p).flatten()
 
-        return ((self.V(x) / self.sigma) / C).flatten()
+        self.recent_V = self.V(x)
+        return (self.recent_V / self.sigma).flatten() - np.log(C)
 
     # just used for visualization purposes
     #   output in shape (batch_size, *data_shape)

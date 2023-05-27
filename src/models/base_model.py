@@ -28,6 +28,8 @@ class BaseModel(LightningModule):
     def __init__(
         self,
         cfg: DictConfig,
+        get_sigma,
+        initial_target
     ):
         super().__init__()
         self.cfg = cfg
@@ -35,6 +37,11 @@ class BaseModel(LightningModule):
         self.data_ndim = cfg.data_ndim
         self.dt = cfg.dt
         self.t_end = cfg.t_end
+        self.get_sigma = get_sigma
+        self.initial_target_matching_batches = cfg.initial_target_matching_batches
+        self.initial_target_matching_additive = cfg.initial_target_matching_additive
+        self.initial_target = initial_target
+        self.training_steps_count = 0
         self.register_buffer("ts", torch.tensor([1e-12, self.t_end]))
         self.instantiate()
 
@@ -46,7 +53,7 @@ class BaseModel(LightningModule):
         f_func = hydra.utils.instantiate(self.cfg.f_func)
         g_func = hydra.utils.instantiate(self.cfg.g_func)
         self.sde_model = hyd_instantiate(
-            self.cfg.sde_model, f_func, g_func, t_end=self.t_end
+            self.cfg.sde_model, f_func, g_func, t_end=self.t_end, get_sigma=self.get_sigma
         )
         # This will call torchsde.sdeint. The function uses sde_model's g and f functions.
         self.sdeint_fn = hyd_instantiate(self.cfg.sdeint, self.sde_model, dt=self.dt)
@@ -60,8 +67,8 @@ class BaseModel(LightningModule):
             self.dataset.to(self.device)
 
     def training_step(self, batch: Any, batch_idx: int):
-        del batch_idx
         batch_size = batch.shape[0]
+        #dim = self.sde_model.data_ndim
         _, loss, info = loss_pis(
             self.sdeint_fn,
             self.ts,
@@ -69,8 +76,12 @@ class BaseModel(LightningModule):
             self.nll_prior_fn,
             self.sde_model.zero(batch_size, device=self.device),
             self.sde_model.nreg,
+            initial_phase=(self.training_steps_count < self.initial_target_matching_batches),
+            initial_goal=self.initial_target,
+            initial_target_matching_additive = self.initial_target_matching_additive
         )
         self.log_dict(info)
+        self.training_steps_count += 1
         return loss
 
     def configure_optimizers(self):

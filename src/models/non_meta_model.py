@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig
 import pytorch_lightning as pl
+from pytorch_lightning.utilities.types import EVAL_DATALOADERS
 from sklearn.datasets import make_moons
 import torch
 from src.task_solving_models.base_ts_model import BaseTSModel
@@ -39,11 +40,17 @@ class NonMetaModel(pl.LightningModule):
 
     def train_dataloader(self):
         # Assuming `task` has a method called `get_train_dataloader()` that returns a PyTorch DataLoader object
-        return DataLoader(self.task.dataset(), batch_size=self.cfg.batch_size, shuffle=True)
+        return DataLoader(self.task.training_dataset(), batch_size=self.cfg.batch_size, shuffle=True)
+    
+    def val_dataloader(self):
+        return DataLoader(self.task.validation_dataset(), batch_size=self.cfg.batch_size)
+
+    def test_dataloader(self):
+        return DataLoader(self.task.test_dataset(), batch_size=self.cfg.batch_size)
 
     # TODO: reactivate once fixed
     def on_epoch_end2(self):
-        x, GT = self.task.dataset()[0]
+        x, GT = self.task.training_dataset()[0]
         y = self.forward(x)
         l = self.task.loss(y, GT)
         

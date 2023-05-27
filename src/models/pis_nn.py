@@ -33,13 +33,15 @@ class PISNN(nn.Module):  # pylint: disable=abstract-method, too-many-instance-at
         reg_fns, # e.g. quad_reg
         grad_fn=None,
         f_format="f",
-        g_coef=np.sqrt(0.2),
+        g_coef=np.sqrt(0.2), # TODO: figure out where this comes from...? and whether it should be 1/K instead, where K is num of timesteps. or hopefully sdeint is doing that for me.
         data_shape=2,
         t_end=1.0,
         sde_type="stratonovich",
         noise_type="diagonal",
         nn_clip=1e2,
         lgv_clip=1e2,
+        sigma_rescaling="static",
+        get_sigma=None
     ):  # pylint: disable=too-many-arguments
         super().__init__()
         self.f_func = f_func
@@ -66,6 +68,18 @@ class PISNN(nn.Module):  # pylint: disable=abstract-method, too-many-instance-at
 
         self.t_end = t_end
         self.select_f(f_format)
+
+        self.sigma_rescaling = sigma_rescaling
+        self.get_sigma = get_sigma
+
+        if self.sigma_rescaling in ["static","dynamic"]:
+            self.sigma_factor = self.get_sigma()
+            self.sqrt_sigma_factor = np.sqrt(self.get_sigma())
+        elif self.sigma_rescaling == "none":
+            self.sigma_factor = 1.0
+            self.sqrt_sigma_factor = 1.0
+        else:
+            raise RuntimeError()
 
     def select_f(self, f_format=None):
         _fn = self.f_func
@@ -133,9 +147,14 @@ class PISNN(nn.Module):  # pylint: disable=abstract-method, too-many-instance-at
 
         x = th.nan_to_num(state[:, : -self.nreg])
         x = x.view(-1, *self.data_shape)
-        control = self.param_fn(t, x).flatten(start_dim=1)
+
+        if self.sigma_rescaling == "dynamic":
+            self.sigma_factor = self.get_sigma()
+
+        control = self.sigma_factor * self.param_fn(t, x).flatten(start_dim=1)
         dreg = tuple(reg_fn(x, control, SharedContext) for reg_fn in self.reg_fns)
         #print(f"    (INFO) For t={t}: Taking control.min={round(float(control.min()), -3)}, control.max={round(float(control.max()), -3)}")
+        # Note: why do we multiply by g_coef here?
         return th.cat((control * self.g_coef,) + dreg, dim=1)
 
     # Noise term w_t. Used in sdeint.
@@ -144,7 +163,10 @@ class PISNN(nn.Module):  # pylint: disable=abstract-method, too-many-instance-at
     def g(self, t, state):
         # t: scaler
         # state: Tensor of shape (n_trajectories, data_ndim + n_reg)
-        origin_g = self.g_func(t, state[:, : -self.nreg]) * self.g_coef
+        if self.sigma_rescaling == "dynamic":
+            self.sqrt_sigma_factor = np.sqrt(self.get_sigma())
+
+        origin_g = self.sqrt_sigma_factor * self.g_func(t, state[:, : -self.nreg]) * self.g_coef
         return th.cat(
             (origin_g, th.zeros((state.shape[0], self.nreg)).to(origin_g)), dim=1
         )

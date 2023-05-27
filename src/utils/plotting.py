@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
 
-def plot_loss_grads_vs(cfg, losses, maxgrads_preopt, maxgrads_postopt, medianVs, sampling_repeats_per_data):
+def plot_loss_grads_vs(cfg, losses, maxgrads_preopt, maxgrads_postopt, medianVs, batch_laps):
     # create two plots, one above the other. top shows loss over time, bottom shows maxgrads.
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True)
     fig.set_size_inches(14, 13)
 
-    for i in range(0, len(losses), sampling_repeats_per_data):
+    for i in range(0, len(losses), batch_laps):
         ax1.axvline(i, color='tab:red', linestyle='--')
         ax2.axvline(i, color='tab:red', linestyle='--')
         ax3.axvline(i, color='tab:red', linestyle='--')

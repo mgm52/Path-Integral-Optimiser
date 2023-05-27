@@ -40,11 +40,15 @@ model:
   batch_size: 100
   sde_model:
     f_format: "f"
+    sigma_rescaling: "none"
   optimizer: "pis"
-  sampling_repeats_per_data: 8
+  batch_laps: 50
+  initial_target_matching_batches: 0
+  initial_target_matching_additive: False
 
 datamodule:
   dataset:
+    # Note that this will be overridden if using PISOptSigmaCB
     sigma: 0.01
   dl:
     # This will be the no. of trajectories
@@ -57,6 +61,27 @@ callbacks:
     #every_n: 25
   lr:
     _target_: src.callbacks.lr.LinearScheduler
+    gamma: 1.0
+    epoch_period: 1
+  pislog:
+    _target_: src.callbacks.pis_opt_log_cb.PISOptLogCB
+  pissigma:
+    _target_: src.callbacks.pis_opt_sigma_cb.PISOptSigmaCB
+    sigma_factor: 1.0
+  #pislrboost:
+    #_target_: src.callbacks.pis_opt_lr_boost_cb.PISOptLRBoostCB
+    #lr_factor: 10.0
+    #no_of_boosts: 50
+
+task:
+  _target_: src.tasks.moons.MoonsTask
+  train_dataset_len: 5000
+  val_dataset_len: 500
+  test_dataset_len: 500
+
+task_solving_model:
+  _target_: src.task_solving_models.ff_nn.FeedForwardNN
+  HIDDENSIZE: 10
 
 logger:
   wandb:

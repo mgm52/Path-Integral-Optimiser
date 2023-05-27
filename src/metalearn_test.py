@@ -34,6 +34,7 @@ if __name__ == "__main__":
 
     # gradient of weights that produced attempted weights
     print(pis_w.grad)
-    # gradient of attempted weights
+
+    # gradient of attempted weights (we want w.grad == ff_net.parameters().grad)
     print(w.grad)
     print([p.grad for p in ff_net.parameters()])

@@ -5,9 +5,10 @@ import torch
 from torch import nn
 
 class FeedForwardNN(BaseTSModel):
-    def __init__(self, DATASIZE, GTSIZE, HIDDENSIZE):
+    def __init__(self, DATASIZE, GTSIZE, HIDDENSIZE, activation="sigmoid"):
         super().__init__(DATASIZE, GTSIZE)
         self.HIDDENSIZE = HIDDENSIZE
+        self.activation = activation
 
     def forward(self, x, w):
         # x is of shape (samples_in_batch, DATASIZE)
@@ -51,8 +52,16 @@ class FeedForwardNN(BaseTSModel):
         ttimer.end_all()
         return y
 
+    def save_checkpoint(self, w, path):
+        torch.save(w, path)
+
     def param_size(self):
         return self.DATASIZE*self.HIDDENSIZE + self.HIDDENSIZE + self.HIDDENSIZE*self.GTSIZE + self.GTSIZE
     
     def get_trainable_net(self):
-        return nn.Sequential(nn.Linear(self.DATASIZE, self.HIDDENSIZE), nn.ReLU(), nn.Linear(self.HIDDENSIZE, self.GTSIZE), nn.Sigmoid()).to("cuda")
+        return nn.Sequential(
+            nn.Linear(self.DATASIZE, self.HIDDENSIZE),
+            nn.ReLU(),
+            nn.Linear(self.HIDDENSIZE, self.GTSIZE),
+            nn.Sigmoid() if self.activation == "sigmoid" else nn.LogSoftmax()
+        ).to("cuda")

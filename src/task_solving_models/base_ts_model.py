@@ -9,5 +9,11 @@ class BaseTSModel:
         # return shape (trajectories_in_batch, samples_in_batch, GTSIZE)
         raise NotImplementedError
     
+    def save_checkpoint(self, w, path):
+        raise NotImplementedError
+    
     def param_size(self):
+        raise NotImplementedError
+    
+    def get_trainable_net(self):
         raise NotImplementedError

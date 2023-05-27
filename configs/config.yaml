@@ -19,6 +19,7 @@ defaults:
   - override hydra/job_logging: colorlog
   # use joblib for multi runs
   - override hydra/launcher: joblib
+  - override hydra/sweeper: nevergrad
 
 hydra:
   job:
@@ -29,6 +30,18 @@ hydra:
   launcher:
     # override the number of jobs for joblib
     n_jobs: 6
+  sweeper:
+    # @package hydra.sweeper
+    _target_: hydra_plugins.hydra_nevergrad_sweeper.nevergrad_sweeper.NevergradSweeper
+    optim:
+      optimizer: BO
+      budget: 80
+      num_workers: 10
+      noisy: false
+      maximize: false
+      seed: null
+      max_failure_rate: 0.0
+    parametrization: {}
 # path to original working directory
 # hydra hijacks working directory by changing it to the current log directory,
 # so it's useful to have this path as a special variable

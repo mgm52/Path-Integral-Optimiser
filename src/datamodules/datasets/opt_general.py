@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import torch as th
 import torch.distributions as D
 from jamtorch.utils import as_numpy
@@ -25,7 +26,11 @@ class OptGeneral(BaseSet):
         # V should be normalised to have min 0 (otherwise we need unusual sigma values)
         # it should return shape (trajectories) - i.e. (x.shape[0])
         self.V = V
-        self.recent_V = None
+        self.recent_V: th.Tensor = None # type: ignore
+        self.recent_x: th.Tensor = None # type: ignore
+    
+    def get_sigma(self):
+        return self.sigma
 
     # returns negative log probability - i.e. the "discriminator" loss
     #   input in shape (trajectories, *data_shape)
@@ -36,7 +41,8 @@ class OptGeneral(BaseSet):
         #return -th.log(p).flatten()
 
         self.recent_V = self.V(x)
-        return ((self.recent_V / self.sigma) / C).flatten()
+        self.recent_x = x
+        return (self.recent_V / self.sigma).flatten() - np.log(C)
 
     # just used for visualization purposes
     #   output in shape (batch_size, *data_shape)

@@ -18,7 +18,12 @@ def set_params(net, params):
 
 def flat_parameters(net):
     # Return all the parameters of the network as a single 1D tensor, preserving grads
-    return torch.cat([p.view(-1) for p in net.parameters()])
+    # TODO: check that this is the same order/shape as set_params!
+    # check whether net is already a parameter
+    if isinstance(net, torch.nn.parameter.Parameter):
+        return net
+    else:
+        return torch.cat([p.view(-1) for p in net.parameters()])
 
 def visualize_weights(net, title="NN"):
     list_of_list_of_weights = []

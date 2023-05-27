@@ -7,7 +7,7 @@ dataset:
   sigma: 50
 
 
-# ig this should also be length of weights (will be set later)
-ndim: 41
-# This should be length of weights (will be set later)
-shape: 41
+# ig this should also be no. of task model params (will be set later)
+ndim: 10 # 41
+# This should be no. of task model params (will be set later)
+shape: 10 # 41

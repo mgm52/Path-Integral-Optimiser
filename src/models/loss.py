@@ -10,7 +10,7 @@ def quad_reg(x, dx, context):
     return 0.5 * dx.pow(2).sum(dim=-1, keepdim=True)
 
 
-def loss_pis(sdeint_fn, ts, nll_target_fn, nll_prior_fn, y0, n_reg):
+def loss_pis(sdeint_fn, ts, nll_target_fn, nll_prior_fn, y0, n_reg, initial_phase=False, initial_goal=0, initial_target_matching_additive=False):
     # sdeint_fn runs torchsde.sdeint(sde, y0, ts)
         # where y0 is start state, ts is trajectory timestamps
     # ys has shape (len(ts), batch_size, dim)
@@ -20,20 +20,46 @@ def loss_pis(sdeint_fn, ts, nll_target_fn, nll_prior_fn, y0, n_reg):
     y1 = ys[-1]
     dim = y1.shape[1]
 
-    reg_loss = y1[:, -n_reg].mean() / dim
     state = th.nan_to_num(y1[:, :-n_reg])
-    sample_nll = nll_target_fn(state).mean() / dim
-    prior_nll = nll_prior_fn(state).mean() / dim
-    term_loss = sample_nll - prior_nll
-    loss = reg_loss + term_loss
-    return (
-        state,
-        loss,
-        {
-            "loss": loss,
-            "reg_loss": reg_loss,
-            "prior_nll": prior_nll,
-            "sample_nll": sample_nll,
-            "term_loss": term_loss,
-        },
-    )
+    
+    loss = 0
+    
+    # TODO: could move this line into if statement for performance; currently it is outside for logging
+    loss_init = (initial_goal - state).pow(2).mean()
+    if initial_phase:
+        loss += loss_init
+        #print(f"{'initial' if initial_phase else ''} training step: loss_init {loss_init}")
+    
+    calculate_pis_loss = (not initial_phase) or initial_target_matching_additive
+    if calculate_pis_loss:
+        # TODO: why are we dividing the mean by dim???
+        reg_loss = y1[:, -n_reg].mean() / dim
+        sample_nll = nll_target_fn(state).mean() / dim
+        prior_nll = nll_prior_fn(state).mean() / dim
+        term_loss = sample_nll - prior_nll
+        loss_pis = reg_loss + term_loss
+        loss += loss_pis
+
+        #print(f"{'initial' if initial_phase else ''} training step: loss_init {loss_init}, loss_pis {loss_pis}")
+
+    if not calculate_pis_loss:
+        return (
+            state,
+            loss,
+            {
+                "loss": loss,
+                "loss_init": loss_init,
+            },
+        )
+    else:
+        return (
+            state,
+            loss,
+            {
+                "loss": loss,
+                "reg_loss": reg_loss,
+                "prior_nll": prior_nll,
+                "sample_nll": sample_nll,
+                "term_loss": term_loss,
+            },
+        )
