@@ -45,6 +45,7 @@ model:
   batch_laps: 50
   initial_target_matching_batches: 0
   initial_target_matching_additive: False
+  lr_plateau: False
 
 datamodule:
   dataset:
@@ -59,15 +60,15 @@ callbacks:
   #sample:
     #_target_: src.callbacks.opt_mini_cb.OptMiniSample
     #every_n: 25
-  lr:
-    _target_: src.callbacks.lr.LinearScheduler
-    gamma: 1.0
-    epoch_period: 1
+  #lr:
+  #  _target_: src.callbacks.lr.LinearScheduler
+  #  gamma: 1.0
+  #  epoch_period: 1
   pislog:
     _target_: src.callbacks.pis_opt_log_cb.PISOptLogCB
-  pissigma:
-    _target_: src.callbacks.pis_opt_sigma_cb.PISOptSigmaCB
-    sigma_factor: 1.0
+  #pissigma:
+  #  _target_: src.callbacks.pis_opt_sigma_cb.PISOptSigmaCB
+  #  sigma_factor: 1.0
   #pislrboost:
     #_target_: src.callbacks.pis_opt_lr_boost_cb.PISOptLRBoostCB
     #lr_factor: 10.0
@@ -75,7 +76,7 @@ callbacks:
 
 task:
   _target_: src.tasks.mnist.MNISTTask
-  train_dataset_len: 5000
+  train_dataset_len: 10000
   val_dataset_len: 500
   test_dataset_len: 500
 

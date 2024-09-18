@@ -7,7 +7,7 @@ default_mode: True
 hydra:
   # default output paths for all file logs
   run:
-    dir: logs/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${name}_${model.optimizer}_${max_steps}
+    dir: logs/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${name}_${model.optimizer}_${trainer.max_steps}
   sweep:
-    dir: logs/multiruns/${now:%Y-%m-%d_%H-%M-%S}_${name}_${model.optimizer}_${max_steps}
+    dir: logs/multiruns/${now:%Y-%m-%d_%H-%M-%S}_${name}_${model.optimizer}_${trainer.max_steps}
     subdir: ${hydra.job.num}

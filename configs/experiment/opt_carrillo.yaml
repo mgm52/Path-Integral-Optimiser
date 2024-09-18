@@ -16,7 +16,7 @@ defaults:
 
 # name of the run determines folder name in logs
 # it's also accessed by loggers
-name: "opt_mnist"
+name: "opt_carrillo"
 
 seed: 12345
 print_config: false
@@ -24,7 +24,7 @@ print_config: false
 trainer:
   min_epochs: 1
   max_epochs: -1
-  max_steps: 10
+  max_steps: -1
   log_every_n_steps: 1
   # default 0.0 (off)
   gradient_clip_val: 0.0
@@ -45,6 +45,7 @@ model:
   batch_laps: 50
   initial_target_matching_batches: 0
   initial_target_matching_additive: False
+  lr_plateau: False
 
 datamodule:
   dataset:
@@ -59,15 +60,15 @@ callbacks:
   #sample:
     #_target_: src.callbacks.opt_mini_cb.OptMiniSample
     #every_n: 25
-  lr:
-    _target_: src.callbacks.lr.LinearScheduler
-    gamma: 1.0
-    epoch_period: 1
+  #lr:
+  #  _target_: src.callbacks.lr.LinearScheduler
+  #  gamma: 1.0
+  #  epoch_period: 1
   pislog:
     _target_: src.callbacks.pis_opt_log_cb.PISOptLogCB
-  pissigma:
-    _target_: src.callbacks.pis_opt_sigma_cb.PISOptSigmaCB
-    sigma_factor: 1.0
+  #pissigma:
+  #  _target_: src.callbacks.pis_opt_sigma_cb.PISOptSigmaCB
+  #  sigma_factor: 1.0
   #pislrboost:
     #_target_: src.callbacks.pis_opt_lr_boost_cb.PISOptLRBoostCB
     #lr_factor: 10.0

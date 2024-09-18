@@ -27,6 +27,8 @@ sdeint:
 
 lr: 5e-3
 weight_decay: 1e-7
+b1: 0.9
+b2: 0.999
 
 
 data_ndim: ${datamodule.ndim}
