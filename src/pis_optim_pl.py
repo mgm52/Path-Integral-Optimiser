@@ -179,9 +179,9 @@ def get_logger(cfg):
                 logger.append(hydra.utils.instantiate(lg_conf))
     return logger
 
-def start_sgd_train_loop(ts_model, task, cfg):
-    pdb.set_trace()
-    model = NonMetaModel(ts_model, task, cfg.model)
+def start_sgd_train_loop(ts_model, task, cfg, optimizer_name):
+    #pdb.set_trace()
+    model = NonMetaModel(ts_model, task, cfg.model, optimizer_name).to("cuda")
     callbacks = [NonMetaLogCB()]
 
     #trainer = pl.Trainer(progress_bar_refresh_rate=10, logger=get_logger(cfg), callbacks=callbacks)
@@ -211,21 +211,23 @@ def start_sgd_train_loop(ts_model, task, cfg):
 
     trainer.fit(model)
 
+    w = model.w.detach().cuda()
+
     # do validation
     val_loss = th.zeros(1, device="cuda")
     for x, GT in model.val_dataloader():
-        y = model.forward(x)
+        y = ts_model.forward(x, w.unsqueeze(0))
         val_loss += task.loss(y, GT)
     val_loss /= len(model.val_dataloader())
 
     # do testing
     test_loss = th.zeros(1, device="cuda")
     for x, GT in model.test_dataloader():
-        y = model.forward(x)
+        y = ts_model.forward(x, w.unsqueeze(0))
         test_loss += task.loss(y, GT)
     test_loss /= len(model.val_dataloader())
 
-    return val_loss, test_loss
+    return float(val_loss), float(test_loss), w.squeeze()
     
 
 def run_with_config(cfg: DictConfig):
@@ -241,8 +243,11 @@ def run_with_config(cfg: DictConfig):
     OPTIM = cfg.model.optimizer
 
     val_loss = None
-    if OPTIM == "sgd":
-        val_loss, test_loss = start_sgd_train_loop(ts_model, task, cfg)
+    if OPTIM in ["sgd", "adam", "adagrad"]:
+        val_loss, test_loss, w = start_sgd_train_loop(ts_model, task, cfg, OPTIM)
+
+        ts_model.save_checkpoint(w, f"best_final_{ts_model.__class__.__name__}.pt")
+
         log.info("Final validation loss: " + str(val_loss))
         log.info("Final test loss: " + str(test_loss))
 
