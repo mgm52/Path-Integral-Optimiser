@@ -1,0 +1,88 @@
+# @package _global_
+
+# verify the loss curve:
+# python run.py experiment=ou.yaml logger=wandb
+
+defaults:
+  - override /mode: default.yaml
+  - override /trainer: default.yaml
+  - override /model: base.yaml
+  - override /datamodule: opt_mini.yaml
+  - override /callbacks: null
+  - override /logger: null
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+# name of the run determines folder name in logs
+# it's also accessed by loggers
+name: "opt_carrillo"
+
+seed: 12345
+print_config: false
+
+trainer:
+  min_epochs: 1
+  max_epochs: -1
+  max_steps: 10
+  log_every_n_steps: 1
+  # default 0.0 (off)
+  gradient_clip_val: 0.0
+  # default "norm", alternatively "value"
+  gradient_clip_algorithm: "norm"
+
+  weights_summary: null
+  resume_from_checkpoint: null
+
+model:
+  lr: 0.01
+  # This is the batch size in the task
+  batch_size: 100
+  sde_model:
+    f_format: "f"
+    sigma_rescaling: "none"
+  optimizer: "pis"
+  batch_laps: 50
+  initial_target_matching_batches: 0
+  initial_target_matching_additive: False
+  lr_plateau: True
+
+datamodule:
+  dataset:
+    # Note that this will be overridden if using PISOptSigmaCB
+    sigma: 0.01
+  dl:
+    # This will be the no. of trajectories
+    # In theory: higher==lower variance, learn faster
+    batch_size: 32
+
+callbacks:
+  #sample:
+    #_target_: src.callbacks.opt_mini_cb.OptMiniSample
+    #every_n: 25
+  #lr:
+  #  _target_: src.callbacks.lr.LinearScheduler
+  #  gamma: 1.0
+  #  epoch_period: 1
+  pislog:
+    _target_: src.callbacks.pis_opt_log_cb.PISOptLogCB
+  pissigma:
+    _target_: src.callbacks.pis_opt_sigma_cb.PISOptSigmaCB
+    sigma_factor: 1.0
+  #pislrboost:
+    #_target_: src.callbacks.pis_opt_lr_boost_cb.PISOptLRBoostCB
+    #lr_factor: 10.0
+    #no_of_boosts: 50
+
+task:
+  _target_: src.tasks.carrillo.CarrilloTask
+  d: 2
+  B: 0
+  C: 0
+
+task_solving_model:
+  _target_: src.task_solving_models.weight_out.WeightOut
+
+logger:
+  wandb:
+    name: null #pis-${name}
