@@ -11,8 +11,10 @@ class CarrilloTask(BaseTask):
         self.d = d
         self.B = B
         self.C = C
-        # datasets of zeros
-        self._train_dataset, self._val_dataset, self._test_dataset = TensorDataset(torch.zeros(1,1), torch.zeros(1,1)), TensorDataset(torch.zeros(1,1), torch.zeros(1,1)), TensorDataset(torch.zeros(1,1), torch.zeros(1,1))
+        # arbitrary datasets of zeros
+        self._train_dataset = TensorDataset(torch.zeros(1000,1), torch.zeros(1000,d))
+        self._val_dataset = TensorDataset(torch.zeros(1000,1), torch.zeros(1000,d))
+        self._test_dataset = TensorDataset(torch.zeros(1000,1), torch.zeros(1000,d))
     
     def training_dataset(self) -> Dataset:
         return self._train_dataset
@@ -28,7 +30,8 @@ class CarrilloTask(BaseTask):
         # GT is of shape (samples_in_batch, GTSIZE)
         # return shape (trajectories_in_batch)
 
-        # For the carillo function, GT is meaningless; assume we are using weight_out
+        # For the carillo function, GT is meaningless; we simply compute the loss on y
+        assert len(y.shape) == 3
         assert y.shape[-1] == self.d
 
         #Carrillo(y)=\frac{1}{d} \sum_{i=1}^d\left[\left(x_i-B\right)^2-10 \cos \left(2 \pi\left(x_i-B\right)\right)+10\right]+C:
@@ -42,6 +45,8 @@ class CarrilloTask(BaseTask):
         # reduce to shape (trajectories_in_batch) by taking mean
         carrillo_y = torch.mean(carrillo_y, dim=1)
 
+        #print(y)
+        #print(carrillo_y)
         return carrillo_y
 
     def datasize(self):
@@ -51,4 +56,29 @@ class CarrilloTask(BaseTask):
         return self.d
     
     def viz(self, ts_model, w, model_name, fig_path=""):
-        pass
+        # Define the range of values to evaluate the Carrillo function
+        x = np.linspace(-5, 5, 1000)
+        y = np.linspace(-5, 5, 1000)
+        X, Y = np.meshgrid(x, y)
+
+        # Compute the Carrillo function for all (x, y) pairs
+        Z = ((X - self.B)**2 - 10*np.cos(2*np.pi*(X - self.B)) + 10) + ((Y - self.B)**2 - 10*np.cos(2*np.pi*(Y - self.B)) + 10)
+        Z = Z / self.d + self.C
+
+        # Plot the heatmap
+        plt.figure(figsize=(5, 5))
+        plt.imshow(Z, extent=[-5, 5, -5, 5], origin='lower', cmap='hot')
+        plt.colorbar(label='Carrillo value')
+
+        # Plot the weights w
+        w_cpu = w.cpu().detach().numpy() # move the weights to cpu and convert to numpy array
+        plt.scatter(w_cpu[0], w_cpu[1], color='white', marker='x', label='pio result')
+        plt.legend()
+
+        plt.title(f"{model_name} Carrillo Task Visualization")
+        plt.xlabel('w1')
+        plt.ylabel('w2')
+
+        # Save the plot
+        plt.savefig(f"{fig_path}/{model_name}_carrillo_point.pdf")
+        plt.close()

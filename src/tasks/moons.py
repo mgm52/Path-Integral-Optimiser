@@ -51,18 +51,21 @@ class MoonsTask(BaseTask):
         l = self.loss(y.unsqueeze(0), GT)
 
         # Visualize moon labelling attempt
+        plt.figure(figsize=(5, 5))
         plt.scatter(x[:, 0].cpu().detach(), x[:, 1].cpu().detach(), c=y.cpu().detach(), cmap="coolwarm", s=32)
         plt.scatter(x[:, 0].cpu().detach(), x[:, 1].cpu().detach(), c=GT.cpu().detach(), cmap="coolwarm", s=1)
         plt.xticks([])
         plt.yticks([])
         plt.title(f"{model_name} labelling attempt (BCE {round(float(l), sigfigs=3)})")
-        plt.savefig(f"{fig_path}/x_{model_name}_GT.png")
+        plt.savefig(f"{fig_path}/x_{model_name}_GT.pdf")
         plt.close()
 
         # Create a histogram of y[0]'s and GT's values
+        plt.figure(figsize=(5, 5))
         plt.hist(y.cpu().detach().numpy(), bins=20, alpha=0.5, label="y")
         plt.hist(GT.cpu().detach().numpy(), bins=20, alpha=0.5, label="GT")
         plt.legend()
         plt.title(f"Histograms: {model_name} and GT.\n{model_name} BCE: {round(float(l), sigfigs=3)}.")
-        plt.savefig(f"{fig_path}/{model_name}_GT_hist.png")
+        plt.grid(axis='y', alpha=0.75)
+        plt.savefig(f"{fig_path}/{model_name}_GT_hist.pdf")
         plt.close()

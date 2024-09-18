@@ -96,19 +96,21 @@ class BaseModel(LightningModule):
             lr=self.cfg.lr,
             weight_decay=self.cfg.weight_decay,
         )
-        return {
+        optdict = {
             "optimizer": optimizer,
-            "lr_scheduler": {
+        }
+        if hasattr(self.cfg, "lr_plateau") and self.cfg.lr_plateau:
+            optdict["lr_scheduler"] = {
                 "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
                     optimizer=optimizer,
                     mode="min",
                     factor=0.5,
-                    patience=10, #patience=6,
+                    patience=8, #patience=6,
                     verbose=True,
                 ),
                 "monitor": "loss"
             }
-        }
+        return optdict
 
     def sample_n(self, batch_size):
         y0 = self.sde_model.zeros(batch_size)

@@ -14,6 +14,7 @@ class WeightOut(BaseTSModel):
         # w is of shape (trajectories_in_batch, WEIGHTSIZE)
         # return shape (trajectories_in_batch, samples_in_batch, GTSIZE)
         assert x.shape[0] == 1 # Only one sample in batch for carrillo
+        assert len(w.shape) == 2
         return w.unsqueeze(1)
 
     def save_checkpoint(self, w, path):

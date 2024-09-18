@@ -1,31 +1,33 @@
+import pdb
 from matplotlib import pyplot as plt
 from omegaconf import DictConfig
 import pytorch_lightning as pl
-from pytorch_lightning.utilities.types import EVAL_DATALOADERS
-from sklearn.datasets import make_moons
 import torch
 from src.task_solving_models.base_ts_model import BaseTSModel
-from src.task_solving_models.ff_nn import FeedForwardNN
 from src.tasks.base_task import BaseTask
-from src.tasks.moons import MoonsTask
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 
 class NonMetaModel(pl.LightningModule):
-    def __init__(self, ts_model: BaseTSModel, task: BaseTask, cfg: DictConfig):
+    def __init__(self, ts_model: BaseTSModel, task: BaseTask, cfg: DictConfig, optimizer_name="sgd"):
         super().__init__()
         self.ts_model = ts_model
         self.task = task
         self.cfg = cfg
+        self.optimizer_name = optimizer_name
 
         # PIS model has initial w found by its initial (uncontrolled?) distribution from prior.
         # Here we instead use Pytorch's default weight initialization.
-        w = torch.nn.Parameter(torch.cat([p.view(-1) for p in ts_model.get_trainable_net().parameters()]).unsqueeze(0).to("cuda"))
+        net = ts_model.get_trainable_net()
+        if isinstance(net, torch.nn.parameter.Parameter):
+            w = net
+        else:
+            w = torch.nn.parameter.Parameter(torch.cat([p.view(-1) for p in net.parameters()]))
         self.register_parameter('w', w)
 
         self.save_hyperparameters(logger=False)
 
     def forward(self, x):
-        return self.ts_model.forward(x, self.w)
+        return self.ts_model.forward(x, self.w.unsqueeze(0))
 
     def training_step(self, batch, batch_idx):
         x, GT = batch
@@ -35,7 +37,14 @@ class NonMetaModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD([self.w], lr=self.cfg.lr)
+        if self.optimizer_name == "sgd":
+            optimizer = torch.optim.SGD([self.w], lr=self.cfg.lr)
+        elif self.optimizer_name == "adam":
+            b1 = self.cfg.b1 if hasattr(self.cfg, "b1") else 0.9
+            b2 = self.cfg.b2 if hasattr(self.cfg, "b2") else 0.999
+            optimizer = torch.optim.Adam([self.w], lr=self.cfg.lr, betas=(b1, b2))
+        elif self.optimizer_name == "adagrad":
+            optimizer = torch.optim.Adagrad([self.w], lr=self.cfg.lr)
         return optimizer
 
     def train_dataloader(self):
@@ -59,6 +68,6 @@ class NonMetaModel(pl.LightningModule):
         plt.hist(GT.cpu().detach().numpy(), bins=20, alpha=0.5, label="GT")
         plt.legend()
         plt.title(f"Histograms: best y and GT.\nBest y loss: {l.min()}.\nAvg y loss: {l.mean()}.")
-        plt.savefig(f"ybest_GT_hist.png")
+        plt.savefig(f"ybest_GT_hist.pdf")
         plt.close()
 

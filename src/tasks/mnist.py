@@ -70,8 +70,10 @@ class MNISTTask(BaseTask):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         num_classes = 10
 
-        path = '../../../../datasets'
-        train_data, test_data = load_mnist(path)
+        abs_path = "/home/max/pis/datasets"
+        relative_path = os.path.relpath(abs_path, os.getcwd())
+
+        train_data, test_data = load_mnist(relative_path)
 
         self._train_dataset = Subset(train_data, range(train_dataset_len))
         
@@ -98,13 +100,17 @@ class MNISTTask(BaseTask):
     import torch.nn as nn
 
     def loss(self, y, GT):
-        loss_func = nn.NLLLoss()
-        losses = []
+        # y is of shape (trajectories_in_batch, samples_in_batch, GTSIZE)
+        # GT is of shape (samples_in_batch, GTSIZE)
+        # return shape (trajectories_in_batch)
 
-        for i in range(y.shape[0]):
-            losses.append(loss_func(y[i], torch.argmax(GT, dim=1)))
+        loss_func = nn.NLLLoss(reduction='none')
 
-        return torch.stack(losses)
+        GT_argmax = torch.argmax(GT, dim=1)
+
+        losses = loss_func(y.view(-1, y.size(-1)), GT_argmax.repeat(y.size(0)))
+
+        return losses.view(y.size(0), -1).mean(dim=1)
 
 
     def datasize(self):
@@ -115,7 +121,7 @@ class MNISTTask(BaseTask):
 
     def viz(self, ts_model, w, model_name, fig_path=""):
         num_samples = 16  # We're going to pick 16 samples
-        fig, axs = plt.subplots(4, 4, figsize=(10, 10))  # Creating 4x4 grid for images
+        fig, axs = plt.subplots(4, 4, figsize=(6, 6))  # Creating 4x4 grid for images
 
         samples = torch.stack([self._train_dataset[i][0] for i in range(num_samples)])  # Selecting the samples
         targets = torch.stack([self._train_dataset[i][1] for i in range(num_samples)])  # Selecting the targets
@@ -131,6 +137,6 @@ class MNISTTask(BaseTask):
             ax.axis('off')
 
         plt.tight_layout()
-        plt.savefig(f"{fig_path}/{model_name}_mnist_examples.png")
+        plt.savefig(f"{fig_path}/{model_name}_mnist_examples.pdf")
 
 

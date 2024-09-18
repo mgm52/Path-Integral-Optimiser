@@ -15,6 +15,9 @@ class FeedForwardNN(BaseTSModel):
         # w is of shape (trajectories_in_batch, WEIGHTSIZE)
         # return shape (trajectories_in_batch, samples_in_batch, GTSIZE)
         ttimer = TimeTester("Forward timer", disabled=True)
+        assert len(x.shape) == 2
+        assert x.shape[1] == self.DATASIZE
+        assert len(w.shape) == 2
 
         trajectories_in_batch = w.shape[0]
         samples_in_batch = x.shape[0]
