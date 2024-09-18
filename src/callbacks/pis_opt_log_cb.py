@@ -1,7 +1,7 @@
 
 from pytorch_lightning import Callback, Trainer
 import torch
-
+from datetime import datetime
 
 class PISOptLogCB(Callback):
 
@@ -17,12 +17,14 @@ class PISOptLogCB(Callback):
         maxgrad = max([torch.max(torch.abs(p.grad)).item() for p in pl_module.sde_model.parameters() if p.requires_grad])
         mediangrad = torch.median(torch.cat([torch.flatten(torch.abs(p.grad)) for p in pl_module.sde_model.parameters() if p.requires_grad]))
         lr = pl_module.trainer.optimizers[0].param_groups[0]["lr"]
+        current_time = datetime.now().timestamp()
         if not (pl_module.dataset.recent_V is None):
             pl_module.log_dict({
                 "lr": lr,
                 "V_median": pl_module.dataset.recent_V.median(),
                 "V_max": pl_module.dataset.recent_V.max(),
                 "V_min": pl_module.dataset.recent_V.min(),
+                "time": current_time,
                 #"V_97-5": pl_module.dataset.recent_V.kthvalue(int(pl_module.dataset.recent_V.shape[0]*0.975), dim=0)[0],
                 #"V_2-5": pl_module.dataset.recent_V.kthvalue(int(pl_module.dataset.recent_V.shape[0]*0.025), dim=0)[0],
                 "V_std": pl_module.dataset.recent_V.std(),

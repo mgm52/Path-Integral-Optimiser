@@ -1,3 +1,7 @@
+import hashlib
+import shutil
+import subprocess
+import time
 import hydra
 import numpy as np
 import pandas as pd
@@ -14,6 +18,7 @@ from datetime import datetime
 import seaborn as sns
 import matplotlib.colors as mcolors
 from matplotlib.markers import MarkerStyle
+from src.utils.nn_creation import visualize_weights, set_params
 
 def read_yaml(file_path):
     with open(file_path, 'r') as stream:
@@ -31,6 +36,7 @@ def get_training_metrics_df(dir_path):
         metrics_path = os.path.join(subfolder, "metrics.csv")
         if os.path.exists(metrics_path):
             df = pd.read_csv(metrics_path)
+            df["time"] = df["time"] - df["time"].iloc[0]
             return df
     return None
 
@@ -82,6 +88,8 @@ def get_config_yaml(dir_path):
     config_path = os.path.join(dir_path, ".hydra", "config.yaml")
     if os.path.exists(config_path):
         return read_yaml(config_path), config_path
+    else:
+        print(f"WARNING: config not found at {config_path}")
     return None, None
 
 def get_best_w(dir_path):
@@ -92,24 +100,51 @@ def get_best_w(dir_path):
             best_w_path = os.path.join(dir_path, file)
             break
     # load into torch
-    return torch.load(best_w_path) if best_w_path else None
+    return torch.load(best_w_path).squeeze() if best_w_path else None
+
+def expand_metrics_to_V(metrics_df):
+    if "train_loss" in metrics_df.keys():
+        for v_param in ["V_min", "V_median", "V_max"]:
+            metrics_df[v_param] = metrics_df["train_loss"]
+    return metrics_df
+
+def generate_approx_time(metrics_df, first_timestamp, final_timestamp):
+    # generate a new column, which represents the difference between first_timestamp and final_timestamp
+    # and is linearly spaced
+    if first_timestamp and final_timestamp:
+        t1 = first_timestamp.timestamp()
+        t2 = final_timestamp.timestamp()
+        time_diff = t2 - t1
+        metrics_df["time"] = np.linspace(0, time_diff, len(metrics_df))
+    return metrics_df
+
+def replace_optimizer_name(config):
+    if config['model']["optimizer"] == "pis":
+        config['model']["optimizer"] = "pio"
+    return config
 
 def get_run_data(dir_path):
     final_val_loss = get_final_validation_loss(dir_path)
     final_test_loss = get_final_test_loss(dir_path)
     final_timestamp = get_final_timestamp(dir_path)
-    metrics_df = get_training_metrics_df(dir_path)
+    first_timestamp = get_first_timestamp(dir_path)
+    metrics_df = expand_metrics_to_V(get_training_metrics_df(dir_path))
+    metrics_df = generate_approx_time(metrics_df, first_timestamp, final_timestamp)
     config, config_path = get_config_yaml(dir_path)
+    config = replace_optimizer_name(config)
     best_w = get_best_w(dir_path)
+    task_name = "Carrillo" if "carrillo" in config['task']['_target_'] else ("MNIST" if "mnist" in config['task']['_target_'] else ("Moons" if "moons" in config['task']['_target_'] else "Task"))
     return {
         'run_folder': dir_path,
         'final_val_loss': final_val_loss,
         'final_test_loss': final_test_loss,
+        'first_timestamp': first_timestamp,
         'final_timestamp': final_timestamp,
         'metrics_df': metrics_df,
         'config': config,
         'config_path': config_path,
-        'best_w': best_w
+        'best_w': best_w,
+        'task_name': task_name
     }
 
 def get_all_run_data(multirun_root_dir):
@@ -130,22 +165,24 @@ def get_all_run_data(multirun_root_dir):
         print(f"Final validation loss: {data['final_val_loss']}")
         print(f"Final timestamp: {data['final_timestamp']}\n")
 
-    earliest_timestamp = get_first_timestamp(os.path.join(multirun_root_dir, "0"))
+    return run_datas
 
-    return run_datas, earliest_timestamp
-
-def plot_multirun_final_loss_over_time(run_datas):
+def plot_multirun_final_loss_over_time(run_datas, log_scale=True):
     # Extract data from run_datas
     timestamps = [data['final_timestamp'] for data in run_datas]
     validation_losses = [data['final_val_loss'] for data in run_datas]
 
+    # If any validation loss is None, remove from both lists
+    validation_losses, timestamps = zip(*[(v, t) for v, t in zip(validation_losses, timestamps) if v is not None])
+    
     # Convert timestamps to minutes relative to the earliest timestamp
+    earliest_timestamp = min([data['first_timestamp'] for data in run_datas])
     timestamps_in_minutes = [(t - earliest_timestamp).total_seconds() / 60 for t in timestamps]
 
     # Plotting
     plt.figure(figsize=(8,4))
     plt.scatter(timestamps_in_minutes, validation_losses, marker=MarkerStyle('x'))
-    plt.title('Final Task Validation Loss Over Time')
+    plt.title('Final Task Validation Loss')
     plt.xlabel(r'\textbf{Time Since Start (minutes)}')
     plt.ylabel(r'\textbf{Final Task Validation Loss}')
 
@@ -154,13 +191,28 @@ def plot_multirun_final_loss_over_time(run_datas):
     p = np.poly1d(z)
     plt.plot(timestamps_in_minutes, p(timestamps_in_minutes), "r--")
 
-    plt.savefig(f"{root_dir}/final_validation_loss_over_time.pdf")
+    plt.tight_layout()
+    if log_scale:
+        plt.yscale('log')
+        plt.savefig(f"{root_dir}/final_validation_loss_over_time_log.pdf")
+    else:
+        plt.savefig(f"{root_dir}/final_validation_loss_over_time.pdf")
+
     plt.close()
 
-def plot_run_train_loss_over_time(run_data):
+def plot_run_train_loss_over_time(run_data, log_scale=True, x_axis='step'):
     df = run_data['metrics_df']
 
-    x = df.index
+    if x_axis == 'step':
+        x = df.index
+    elif x_axis == 'examples':
+        batch_size = run_data["config"]["model"]["batch_size"]
+        x = df.index * batch_size
+    elif x_axis == 'time':
+        x = df['time']
+    else:
+        raise ValueError(f"Unsupported x_axis value: {x_axis}")
+
     v_median = df['V_median']
     v_min = df['V_min']
     v_max = df['V_max']
@@ -170,14 +222,85 @@ def plot_run_train_loss_over_time(run_data):
     plt.fill_between(x, v_median, v_min, color='blue', alpha=0.2)
     plt.fill_between(x, v_median, v_max, color='blue', alpha=0.2)
 
-    plt.xlabel(r"\textbf{Step}")
+    plt.xlabel(r"\textbf{" + x_axis.capitalize() + "}")
     plt.ylabel(r'\textbf{Loss}')
     plt.title('Median (+/- max/min over trajectories) \nTask Training Loss for Best Run')
     plt.legend()
-    plt.savefig(f"{root_dir}/v_median.pdf")
+
+    plt.tight_layout()
+    if log_scale:
+        plt.yscale('log')
+        plt.savefig(f"{root_dir}/v_median_{x_axis}_log.pdf")
+    else:
+        plt.savefig(f"{root_dir}/v_median_{x_axis}.pdf")
+
     plt.close()
 
-def plot_multirun_all_train_loss_over_time(run_datas):
+def plot_run_lr_over_time(run_data, log_scale=True):
+    df = run_data['metrics_df']
+    x = df.index
+    plt.figure(figsize=(6,4))
+
+    lrs = df['lr']
+    plt.plot(x, lrs, color='tab:blue')
+
+    plt.grid(True, which="both", ls="-", alpha=0.3)
+    if "sigma" in df:
+        sigmas = df['sigma']
+        plt.plot(x, sigmas, color='tab:red')
+        plt.title('Learning Rate and $\sigma$')
+    else:
+        plt.title('Learning Rate')
+    
+    plt.xlabel(r"\textbf{Step}")
+    plt.ylabel(r'\textbf{Value}')
+    
+    plt.tight_layout()
+    if log_scale:
+        plt.yscale('log')
+        plt.savefig(f"{root_dir}/lr_over_time_log.pdf")
+    else:
+        plt.savefig(f"{root_dir}/lr_over_time.pdf")
+    plt.close()
+
+def plot_run_gradients(run_data):
+    df = run_data['metrics_df']
+    x = df.index
+
+    if "loss" in df: losses = df['loss']
+    else: losses = df['train_loss']
+
+    if not "pis_grad_max_preopt" in df:
+        return
+    
+    maxgrads_preopt = df['pis_grad_max_preopt']
+    maxgrads_postopt = df['pis_grad_max_postopt']
+    medianVs = df['V_median']
+
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True)
+    fig.set_size_inches(10, 9)
+
+    ax1.plot(x, losses, color='tab:blue')
+    ax1.set_title("Loss")
+
+    ax2.plot(x, maxgrads_preopt, color='tab:green')
+    ax2.set_title("Max grad (pre-optimization)")
+
+    ax3.plot(x, maxgrads_postopt, color='darkgreen')
+    ax3.set_title("Max grad (post-optimization)")
+
+    ax4.plot(x, medianVs, color='tab:purple')
+    ax4.set_title("Median V(x) (i.e. task loss)")
+
+    plt.xlabel(r"\textbf{Step}")
+
+    plt.suptitle(f"Loss \& maxgrad")
+    plt.tight_layout()
+    plt.savefig(f"{root_dir}/gradients.pdf")
+    plt.close()
+
+
+def plot_multirun_all_train_loss_over_time(run_datas, log_scale=False):
     for run_data in run_datas:
         df = run_data['metrics_df']
 
@@ -191,12 +314,18 @@ def plot_multirun_all_train_loss_over_time(run_datas):
         #plt.fill_between(x, v_median, v_max, color='blue', alpha=0.2)
 
     plt.xlabel(r"\textbf{Step}")
-    plt.ylabel(r'\textbf{Value}')
+    plt.ylabel(r'\textbf{Loss}')
     plt.title('Median Task Training Loss for All Runs')
-    plt.savefig(f"{root_dir}/v_median_all_runs.pdf")
+
+    plt.tight_layout()
+    if log_scale:
+        plt.yscale('log')
+        plt.savefig(f"{root_dir}/v_median_all_runs_log.pdf")
+    else:
+        plt.savefig(f"{root_dir}/v_median_all_runs.pdf")
     plt.close()
 
-def plot_multirun_all_min_train_loss_over_time(run_datas):
+def plot_multirun_all_min_train_loss_over_time(run_datas, log_scale=False):
     for run_data in run_datas:
         df = run_data['metrics_df']
 
@@ -210,50 +339,108 @@ def plot_multirun_all_min_train_loss_over_time(run_datas):
         #plt.fill_between(x, v_median, v_max, color='blue', alpha=0.2)
 
     plt.xlabel(r"\textbf{Step}")
-    plt.ylabel(r'\textbf{Value}')
-    plt.title('Median Task Training Loss for All Runs')
-    plt.savefig(f"{root_dir}/v_min_all_runs.pdf")
+    plt.ylabel(r'\textbf{Loss}')
+    plt.title('Min Task Training Loss for All Runs')
+    plt.tight_layout()
+    if log_scale:
+        plt.yscale('log')
+        plt.savefig(f"{root_dir}/v_min_all_runs_log.pdf")
+    else:
+        plt.savefig(f"{root_dir}/v_min_all_runs.pdf")
     plt.close()
 
-def plot_multirun_combined_train_loss_over_time(run_datas_list):
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_multirun_combined_train_loss_over_time(run_datas_list, labelling_config="optimizer", log_scale=False, x_axis='step'):
+    shortest_run_end = None
+
     # Loop over run_datas in run_datas_list
-    # TODO: consider limiting to shortest-length run_datas
+    plt.figure(figsize=(4,4))
+
     for i, run_datas in enumerate(run_datas_list):
         v_mins = []
+        x_values = []
 
         for run_data in run_datas:
             df = run_data['metrics_df']
             v_mins.append(df['V_min'])
 
-        # Assuming all runs have the same steps
-        x = run_datas[0]['metrics_df'].index
+            if x_axis == 'step':
+                x_values.append(df.index)
+                # Update shortest_run_end if necessary
+                if shortest_run_end is None or df.index[-1] < shortest_run_end:
+                    shortest_run_end = df.index[-1]
+            elif x_axis == 'examples':
+                batch_size = run_data["config"]["model"]["batch_size"]
+                x_values.append(df.index * batch_size)
+                # Update shortest_run_end if necessary
+                if shortest_run_end is None or (df.index[-1] * batch_size) < shortest_run_end:
+                    shortest_run_end = df.index[-1] * batch_size
+            elif x_axis == 'time':
+                x_values.append(df['time'])
+                # Update shortest_run_end if necessary
+                if shortest_run_end is None or df['time'].iloc[-1] < shortest_run_end:
+                    shortest_run_end = df['time'].iloc[-1]
+            else:
+                raise ValueError(f"Unsupported x_axis value: {x_axis}")
+
+        # Assuming all runs have the same x values
+        x = x_values[0]
 
         # Get minimum, median, and maximum of V_min over runs
         CI95_values = np.percentile(v_mins, [2.5, 97.5], axis=0)
         med_values = np.median(v_mins, axis=0)
 
-        plt.plot(x, med_values, label=f'Median V_min for run_datas {i+1}')
-        plt.fill_between(x, CI95_values[0], med_values, alpha=0.2, color=f'C{i}')
-        plt.fill_between(x, med_values, CI95_values[1], alpha=0.2, color=f'C{i}')
+        if labelling_config:
+            plt.plot(x, med_values, label=f"{run_datas[0]['config']['model'][labelling_config]}")
+        else:
+            plt.plot(x, med_values, label=f"{i}")
+        plt.fill_between(x, CI95_values[0], med_values, alpha=0.2, color=f"C{i}")
+        plt.fill_between(x, med_values, CI95_values[1], alpha=0.2, color=f"C{i}")
 
     # Finalize the plot
-    plt.xlabel(r"\textbf{Step}")
-    plt.ylabel(r'\textbf{Value}')
-    plt.title('Run-Median Trajectory-Best \n Task Training Loss for All Runs (95% CI)')
+    plt.xlabel(r"\textbf{" + x_axis.capitalize() + "}")
+    plt.ylabel(r"\textbf{Loss}")
+    plt.grid(True, which="both", ls="-", alpha=0.3)
+    plt.title(f"{run_datas_list[0][0]['task_name']}:\nTask Training Loss over {sum([len(rd) for rd in run_datas_list])} Runs (95\% CI)")
     plt.legend()
-    plt.savefig(f"{root_dir}/v_min_combined_runs.pdf")
+    plt.tight_layout()
+    if log_scale:
+        plt.yscale('log')
+        plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}_log.pdf")
+        print(f"{root_dir}/v_min_combined_runs_{x_axis}_log.pdf")
+    else:
+        plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}.pdf")
+
+    # If shortest_run_end is not None, create an additional plot with trimmed x-axis
+    if shortest_run_end is not None:
+        plt.xlim(left=0, right=shortest_run_end)  # Explicitly set the left limit to 0
+        plt.title(f"Task Training Loss over {sum([len(rd) for rd in run_datas_list])} Runs (95\% CI)")
+        if log_scale:
+            plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}_log_trimmed.pdf")
+        else:
+            plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}_trimmed.pdf")
+
     plt.close()
+
+
+
+
+def get_task_model_weights(run_data):
+    task = hydra.utils.instantiate(run_data["config"]["task"])
+    ts_model = hydra.utils.instantiate(
+        run_data["config"]["task_solving_model"], DATASIZE=task.datasize(), GTSIZE=task.gtsize(), _convert_="partial"
+    )
+    w = run_data["best_w"].squeeze()
+    return task, ts_model, w
 
 def plot_run_task_viz(run_data):
     if run_data["best_w"] is None:
         print("No best w found for this run")
         return
     
-    task = hydra.utils.instantiate(run_data["config"]["task"])
-    ts_model = hydra.utils.instantiate(
-        run_data["config"]["task_solving_model"], DATASIZE=task.datasize(), GTSIZE=task.gtsize(), _convert_="partial"
-    )
-    w = run_data["best_w"]
+    task, ts_model, w = get_task_model_weights(run_data)
 
     task.viz(ts_model, w, "PIO", root_dir)
 
@@ -288,53 +475,132 @@ def plot_multirun_param_correlations(run_datas):
     # change column names to remove prefixes
     df = df.rename(columns=lambda x: x.replace('model_', ''))
     df = df.rename(columns=lambda x: x.replace('datamodule_dataset_', ''))
+    df = df.rename(columns=lambda x: x.replace('trainer_gradient', 'grad'))
+    df = df.rename(columns=lambda x: x.replace('callbacks_', ''))
+    df = df.rename(columns=lambda x: x.replace('f_func_', ''))
     changing_params = [p.replace('model_', '') for p in changing_params]
     changing_params = [p.replace('datamodule_dataset_', '') for p in changing_params]
+    changing_params = [p.replace('trainer_gradient', 'grad') for p in changing_params]
+    changing_params = [p.replace('callbacks', '') for p in changing_params]
+    changing_params = [p.replace('f_func_', '') for p in changing_params]
 
     # For each changing parameter, calculate the correlation with the final validation loss
     df['final_val_loss'] = [rd['final_val_loss'] for rd in run_datas]
     correlations = df[changing_params].apply(lambda x: x.corr(df['final_val_loss']))
 
-    # Generate color palette based on the y value's magnitude
-    #norm = mcolors.Normalize(correlations.values.min(), correlations.values.max())
-    norm = mcolors.Normalize(-1, 1)
-    #colors = cm.get_cmap('coolwarm')(norm(np.abs(correlations.values)))
-    colors = cm.get_cmap('RdYlGn')(norm(correlations.values))
-    plt.figure(figsize=(8, 4))
-    sns.barplot(x=correlations.index, y=correlations.values, palette=colors)
-    plt.ylim(-1, 1)
-    plt.axhline(0, color='black', linewidth=0.5)
-    #plt.title('Correlation between parameters and final validation loss')
-    plt.xlabel(r"\textbf{Parameter}")
-    plt.ylabel(r"\textbf{Correlation}")
-    #plt.xticks(rotation=45)
-    plt.savefig(f"{root_dir}/correlations.pdf")
-    plt.close()
+    if len(correlations) > 0:
+
+        # Generate color palette based on the y value's magnitude
+        #norm = mcolors.Normalize(correlations.values.min(), correlations.values.max())
+        norm = mcolors.Normalize(-1, 1)
+        #colors = cm.get_cmap('coolwarm')(norm(np.abs(correlations.values)))
+        colors = cm.get_cmap('RdYlGn')(norm(correlations.values))
+        plt.figure(figsize=(1.5 * len(correlations.index), 4))
+        # add a horizontal grid
+        plt.grid(axis='y', linestyle='-', alpha=0.5)
+        sns.barplot(x=correlations.index, y=correlations.values, palette=colors)
+        #plt.ylim(-1, 1)
+        plt.axhline(0, color='black', linewidth=0.5)
+        #plt.title('Correlation between parameters and final validation loss')
+        plt.xlabel(r"\textbf{Parameter}")
+        plt.ylabel(r"\textbf{Loss Correlation}")
+        #plt.xticks(rotation=45)
+        plt.savefig(f"{root_dir}/correlations.pdf")
+        plt.close()
+    else:
+        print("WARNING: No correlations found")
 
 import sys
+
+def plot_run_weights(run_data):
+    if run_data["best_w"] is None:
+        print("No best w found for this run")
+        return
+    
+    task, ts_model, w = get_task_model_weights(run_data)
+    net = ts_model.get_trainable_net()
+    if not isinstance(net, torch.nn.Parameter):
+        set_params(net, w)
+        visualize_weights(net, ts_model.__class__.__name__, root_dir)
+
+def get_multirun_final_test_loss(run_datas):
+    final_test_losses = [rd["final_test_loss"] for rd in run_datas]
+    std = np.std(final_test_losses)
+    mean = np.mean(final_test_losses)
+    return mean, std, final_test_losses
+
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Please provide the root directory as an argument.")
         sys.exit(1)
-    root_dir = sys.argv[1]
+    if len(sys.argv) == 2:
+        root_dir = sys.argv[1]
 
-    if "multiruns/" in root_dir:
-        # Read runs
-        run_datas, earliest_timestamp = get_all_run_data(root_dir)
+        if "multiruns/" in root_dir:
+            # Read runs
+            run_datas = get_all_run_data(root_dir)
 
-        # Plot sweep stats
-        plot_multirun_final_loss_over_time(run_datas)
-        plot_multirun_param_correlations(run_datas)
-        plot_multirun_all_train_loss_over_time(run_datas)
-        plot_multirun_all_min_train_loss_over_time(run_datas)
-        plot_multirun_combined_train_loss_over_time([run_datas])
-        
-        # Plot best run
-        best_run = min(run_datas, key=lambda x: x['final_val_loss'])
-        run_data = best_run
+            # Plot sweep stats
+            plot_multirun_param_correlations(run_datas)
+            for log_scale in [True, False]:
+                plot_multirun_final_loss_over_time(run_datas, log_scale)
+                plot_multirun_all_train_loss_over_time(run_datas, log_scale)
+                plot_multirun_all_min_train_loss_over_time(run_datas, log_scale)
+                for x_axis in ["step", "time", "examples"]:
+                    plot_multirun_combined_train_loss_over_time([run_datas], "optimizer", log_scale, x_axis)
+            mean_tl, std_tl, all_tl = get_multirun_final_test_loss(run_datas)
+            with open(f"{root_dir}/final_test_loss.txt", "w") as f:
+                f.write(f"{mean_tl} +/- {std_tl} over {len(run_datas)} runs ({all_tl})\n")
+
+            # Plot best run
+            best_run = min(run_datas, key=lambda x: x['final_val_loss'])
+            run_data = best_run
+        else:
+            run_data = get_run_data(root_dir)
+
+        for x_axis in ["step", "time", "examples"]:
+            for log_scale in [True, False]:
+                plot_run_train_loss_over_time(run_data, log_scale, x_axis)
+        plot_run_task_viz(run_data)
+        plot_run_weights(run_data)
+        plot_run_gradients(run_data)
+        for log_scale in [True, False]:
+            plot_run_lr_over_time(run_data)
     else:
-        run_data = get_run_data(root_dir)
+        # root_dir is a new directory
+        root_dirs = sys.argv[1:]
+        endings = [rd.split("/")[-1] for rd in root_dirs]
+        root_dir = f"logs/multiruns/Z_{max(endings)}_comboX{len(sys.argv)-1}_{hashlib.md5(f'{endings}'.encode()).hexdigest()}"
+        if not os.path.exists(root_dir):
+            os.mkdir(root_dir)
+        
 
-    plot_run_train_loss_over_time(run_data)
-    plot_run_task_viz(run_data)
+        for rd in root_dirs:
+            if "pis" in rd:
+                # start a viz.py subprocess for rd
+                print(f"Located a PIS run: calling viz.py for {rd}")
+                subprocess.run(["python", "viz.py", rd])
+                # delete root_dir/pis-seed-viz
+                if os.path.exists(f"{root_dir}/pis-seed-viz"):
+                    shutil.rmtree(f"{root_dir}/pis-seed-viz")
+                # copy rd directory to root_dir/pis-seed-viz
+                shutil.copytree(rd, f"{root_dir}/pis-seed-viz")
+                print(f"Copied {rd} to {root_dir}/pis-seed-viz")
+
+        run_datas_list = [get_all_run_data(rd) for rd in root_dirs]
+        # sort by optimizer name
+        run_datas_list = sorted(run_datas_list, key=lambda x: x[0]["config"]["model"]["optimizer"])
+
+        #run_datas_1, earliest_timestamp_1 = get_all_run_data(root_dir_1)
+        #run_datas_2, earliest_timestamp_2 = get_all_run_data(root_dir_2)
+
+        for x_axis in ["step", "time", "examples"]:
+            for log_scale in [True, False]:
+                plot_multirun_combined_train_loss_over_time(run_datas_list, "optimizer", log_scale, x_axis)
+        
+        means_stds = [get_multirun_final_test_loss(run_datas) for run_datas in run_datas_list]
+        with open(f"{root_dir}/final_test_losses.txt", "w") as f:
+            # write each mean and std on a new line
+            f.write("\n".join([f"{run_datas[0]['run_folder']}: {mean} +/- {std} over {len(run_datas)} runs \n({all_tl})\n" for (mean, std, all_tl), run_datas in zip(means_stds, run_datas_list)]))

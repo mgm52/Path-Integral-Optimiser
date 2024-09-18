@@ -50,7 +50,7 @@ class OptGeneral(BaseSet):
         print(f"!!! WARNING - CALLED SAMPLE WITH BATCH SIZE {batch_size}")
         return th.zeros_like(self.data).repeat(batch_size, 1)
 
-    def viz_pdf(self, fsave="opt-general-density.png"):
+    def viz_pdf(self, fsave="opt-general-density.pdf"):
         if self.data.shape == (1,):
             x = th.linspace(-3, 5, 1000).cuda()
             density = self.unnorm_pdf(x)

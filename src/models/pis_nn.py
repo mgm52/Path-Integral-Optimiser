@@ -112,7 +112,7 @@ class PISNN(nn.Module):  # pylint: disable=abstract-method, too-many-instance-at
                     #grad_np = np.nan_to_num(grad_np, nan=20000)
 
                     #plt.scatter(x_np, grad_np)
-                    #plt.savefig(f"grad_{t}.png")
+                    #plt.savefig(f"grad_{t}.pdf")
                     #pdb.set_trace()
 
                 return f - self.lgv_coef(t) * grad
