@@ -38,12 +38,15 @@ def run_experiment(experiment_name, optimizer_name, extra_choice=False):
         command.insert(9, "trainer.max_steps=32")
         command.insert(9, "hydra.sweeper.optim.budget=32")
 
-    if optimizer_name == 'pis':
+    if optimizer_name in ['pis', 'pis-mc']:
         if not "schedule" in experiment_name:
             command.insert(9, "datamodule.dataset.sigma=tag(log, interval(0.0001, 0.1))")
         else:
             command.insert(9, "callbacks.pissigma.sigma_factor=tag(log, interval(0.01, 10))")
     
+    if optimizer_name == 'pis-mc':
+        command.insert(9, "model.m_monte_carlo=int(tag(log,interval(2,2048)))")
+
     if "carrillo" in experiment_name:
         command.insert(9, "model.batch_size=1")
     else:
@@ -80,7 +83,7 @@ def run_experiment(experiment_name, optimizer_name, extra_choice=False):
 
 if __name__ == "__main__":
     experiments = ["opt_mini"] #, ""
-    optimizers = ["pis"]
+    optimizers = ["pis-mc"]
     extra_choice = False
 
     #run_experiment("opt_mnist", "sgd")

@@ -1,3 +1,4 @@
+import math
 import pytorch_lightning as pl
 from typing import Any, List
 import hydra
@@ -27,6 +28,7 @@ import torch as th
 import pdb
 
 # TODO: see if there's a better way to do this, using config & hydra
+# TODO: at the very least, rename this..!
 class MyDataModule(LightningDataModule):
     def __init__(self, dataset: Dataset, batch_size: int, num_workers: int = 0):
         super().__init__()
@@ -179,6 +181,67 @@ def get_logger(cfg):
                 logger.append(hydra.utils.instantiate(lg_conf))
     return logger
 
+def start_mc_train_loop_no_lightning(cfg, task: BaseTask, ts_model: BaseTSModel):
+    batch_size= cfg.model.batch_size
+    sigma = cfg.datamodule.dataset.sigma
+    m_monte_carlo = cfg.model.m_monte_carlo # only parameter unique to MC method
+    num_trajectories = cfg.datamodule.dl.batch_size
+    dt = cfg.model.dt
+
+    num_t_samples = int(1/dt)
+    # update dt to ensure we reach t_end=1
+    dt = 1/num_t_samples
+
+    train_dataloader = DataLoader(task.training_dataset(), batch_size=batch_size, shuffle=True)
+
+    def get_P(w):
+        x, GT = train_dataloader.sampler().next() # replace with actual function
+
+        y = ts_model.forward(x, w)
+        l = task.loss(y, GT)
+
+        boltz_l = th.exp(-l / sigma)
+        return boltz_l
+    def get_N(w):
+        n = w.shape[0]
+        dist = th.distributions.MultivariateNormal(th.zeros(n), th.eye(n))  # N(0, I_n)
+        return th.exp(dist.log_prob(w))  # Probability density function
+    def get_f(w):
+        P = get_P(w)
+        N = get_N(w)
+        return P/N
+    def get_nabla_f(f, w):
+        return th.autograd.grad(f, w, retain_graph=True)[0]
+    def get_drift(x, t):
+        f_values = []
+        for i in range(m_monte_carlo):
+            Z = th.randn(ts_model.param_size())
+            f = get_f(x + math.sqrt(1 - t) * Z)
+            f_values.append(f)
+        nabla_f_values = [get_nabla_f(f, x) for f in f_values]
+        sum_nabla_f = th.stack(nabla_f_values).sum(dim=0)
+        sum_f = th.stack(f_values).sum()
+        drift = sum_nabla_f / sum_f
+        return drift
+
+    
+    final_trajectories = []
+    for _ in range(num_trajectories):
+        ts = th.linspace(0, 1, num_t_samples)
+        x = th.zeros(ts_model.param_size())
+        dt = ts[1] - ts[0]
+        for i in range(num_t_samples):
+            t = ts[i]
+            drift = get_drift(x, t)
+            noise = th.randn_like(x) * math.sqrt(dt)
+            x = x + drift * dt + noise
+        # Final state X_T!
+        final_trajectories.append(x)
+    
+    # put final_trajectories into a tensor in shape (trajectories, *data_shape)
+    final_trajectories = th.stack(final_trajectories)
+    return final_trajectories
+
 def start_sgd_train_loop(ts_model, task, cfg, optimizer_name):
     #pdb.set_trace()
     model = NonMetaModel(ts_model, task, cfg.model, optimizer_name).to("cuda")
@@ -188,7 +251,6 @@ def start_sgd_train_loop(ts_model, task, cfg, optimizer_name):
     trainer = hydra.utils.instantiate(
         cfg.trainer, callbacks=callbacks, logger=get_logger(cfg), _convert_="partial"
     )
-
 
     # Send some parameters from config to all lightning loggers
     log.info("Logging hyperparameters!")
@@ -228,7 +290,32 @@ def start_sgd_train_loop(ts_model, task, cfg, optimizer_name):
     test_loss /= len(model.val_dataloader())
 
     return float(val_loss), float(test_loss), w.squeeze()
+
+# TODO: move this into a class, like the PIS optimizer...
+# Also reconsider whether I really want task and task-solving model bundled with optimizer class...
+def mc_task_weights_to_validation_loss(cfg, w, ts_model: BaseTSModel, task: BaseTask):
+    val_dataset = task.validation_dataset()
+    val_dataloader = DataLoader(val_dataset, batch_size=cfg.model.batch_size)
     
+    l = th.zeros(w.shape[0], device=w.device)
+    for x, GT in val_dataloader:
+        y = ts_model.forward(x, w)
+        l += task.loss(y, GT)
+    l /= len(val_dataloader)
+
+    return l
+
+def mc_task_weights_to_test_loss(cfg, w, ts_model: BaseTSModel, task: BaseTask):
+    test_dataset = task.test_dataset()
+    test_dataloader = DataLoader(test_dataset, batch_size=cfg.model.batch_size)
+    
+    l = th.zeros(w.shape[0], device=w.device)
+    for x, GT in test_dataloader:
+        y = ts_model.forward(x, w)
+        l += task.loss(y, GT)
+    l /= len(test_dataloader)
+
+    return l
 
 def run_with_config(cfg: DictConfig):
     #print(cfg) 
@@ -251,18 +338,28 @@ def run_with_config(cfg: DictConfig):
         log.info("Final validation loss: " + str(val_loss))
         log.info("Final test loss: " + str(test_loss))
 
-    elif OPTIM == "pis":
-        optimizer = PISBasedOptimizer(
-            cfg=cfg,
-            task=task,
-            ts_model=ts_model)
-        final_trajectories = optimizer.start_train_loop()
-                    
-        final_val_task_losses = optimizer.task_weights_to_validation_loss(final_trajectories)
-        min_val_loss = float(final_val_task_losses.min())
-        best_trajectory = final_trajectories[final_val_task_losses.argmin()]
+    elif OPTIM in ["pis", "pis-mc"]:
+        if OPTIM == "pis-mc":
+            final_trajectories = start_mc_train_loop_no_lightning(cfg, task, ts_model)
+            final_val_task_losses = mc_task_weights_to_validation_loss(cfg, final_trajectories, ts_model, task)
+            
+            min_val_loss = float(final_val_task_losses.min())
+            best_trajectory = final_trajectories[final_val_task_losses.argmin()]
+            
+            final_test_loss_for_best_trajectory = float(mc_task_weights_to_test_loss(cfg, best_trajectory.unsqueeze(0), ts_model, task))
 
-        final_test_loss_for_best_trajectory = float(optimizer.task_weights_to_test_loss(best_trajectory.unsqueeze(0)))
+        else:
+            optimizer = PISBasedOptimizer(
+                cfg=cfg,
+                task=task,
+                ts_model=ts_model)
+            final_trajectories = optimizer.start_train_loop()
+            final_val_task_losses = optimizer.task_weights_to_validation_loss(final_trajectories)
+        
+            min_val_loss = float(final_val_task_losses.min())
+            best_trajectory = final_trajectories[final_val_task_losses.argmin()]
+
+            final_test_loss_for_best_trajectory = float(optimizer.task_weights_to_test_loss(best_trajectory.unsqueeze(0)))
 
         ts_model.save_checkpoint(final_trajectories, f"{final_trajectories.shape[0]}_final_{ts_model.__class__.__name__}.pt")
         ts_model.save_checkpoint(best_trajectory, f"best_final_{ts_model.__class__.__name__}.pt")
