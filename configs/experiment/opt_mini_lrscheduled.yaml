@@ -81,7 +81,7 @@ task:
   test_dataset_len: 500
 
 task_solving_model:
-  _target_: src.task_solving_models.ff_nn.FeedForwardNN
+  _target_: src.models_tasksolve.ff_nn.FeedForwardNN
   activation: sigmoid
   HIDDENSIZE: 10
 

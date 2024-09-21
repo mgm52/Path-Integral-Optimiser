@@ -81,7 +81,7 @@ task:
   C: 0
 
 task_solving_model:
-  _target_: src.task_solving_models.weight_out.WeightOut
+  _target_: src.models_tasksolve.weight_out.WeightOut
 
 logger:
   wandb:

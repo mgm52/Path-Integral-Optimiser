@@ -22,7 +22,7 @@ trainer:
   gradient_clip_algorithm: norm
 model:
   module:
-    _target_: src.models.base_model.BaseModel
+    _target_: src.models_lightning.base_model.BaseModel
   f_func:
     _target_: jamtorch.nn.fouriermlp.FourierMLP
     in_shape: ${model.data_ndim}
@@ -32,9 +32,9 @@ model:
   g_func:
     _target_: src.networks.simple.IdentityOne
   sde_model:
-    _target_: src.models.pis_nn.PISNN
+    _target_: src.models_nn.pis_nn.PISNN
     reg_fns:
-    - src.models.loss.quad_reg
+    - src.models_lightning.base_model_loss.quad_reg
     f_format: f
     data_shape: ${model.data_shape}
     sde_type: ito
@@ -92,4 +92,4 @@ task:
   B: 0
   C: 0
 task_solving_model:
-  _target_: src.task_solving_models.weight_out.WeightOut
+  _target_: src.models_tasksolve.weight_out.WeightOut

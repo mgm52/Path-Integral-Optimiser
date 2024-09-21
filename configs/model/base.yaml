@@ -1,5 +1,5 @@
 module:
-  _target_: src.models.base_model.BaseModel
+  _target_: src.models_lightning.base_model.BaseModel
 
 f_func:
   _target_: jamtorch.nn.fouriermlp.FourierMLP
@@ -12,9 +12,9 @@ g_func:
   _target_: src.networks.simple.IdentityOne
 
 sde_model:
-  _target_: src.models.pis_nn.PISNN
+  _target_: src.models_nn.pis_nn.PISNN
   reg_fns:
-    - src.models.loss.quad_reg
+    - src.models_lightning.base_model_loss.quad_reg
   f_format: "t_tnet_grad"
   data_shape: ${model.data_shape}
   sde_type: ito
