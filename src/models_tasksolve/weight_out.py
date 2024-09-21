@@ -1,4 +1,4 @@
-from src.task_solving_models.base_ts_model import BaseTSModel
+from src.models_tasksolve.base_ts_model import BaseTSModel
 from src.utils.nn_creation import flat_parameters, set_params
 from src.utils.time_utils import TimeTester
 import torch
@@ -13,7 +13,8 @@ class WeightOut(BaseTSModel):
         # x is of shape (samples_in_batch, DATASIZE)
         # w is of shape (trajectories_in_batch, WEIGHTSIZE)
         # return shape (trajectories_in_batch, samples_in_batch, GTSIZE)
-        assert x.shape[0] == 1 # Only one sample in batch for carrillo
+        print(f"DATASIZE: {self.DATASIZE}, GTSIZE: {self.GTSIZE}")
+        assert x.shape[0] == 1, f"Expected shape dim 0 to be (1), actual x.shape {x.shape}" # Only one sample in batch for carrillo
         assert len(w.shape) == 2
         return w.unsqueeze(1)
 

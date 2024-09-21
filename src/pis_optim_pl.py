@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import pytorch_lightning as pl
 from typing import Any, List
 import hydra
@@ -8,12 +9,12 @@ from src.callbacks.non_meta_log_cb import NonMetaLogCB
 from src.callbacks.pis_opt_cb import PISOptCB
 from src.datamodules.datasets.opt_general import OptGeneral
 from src.logger.jam_wandb import JamWandb
-from src.models.base_model import BaseModel
+from src.models_lightning.base_model import BaseModel
 
-from src.models.loss import loss_pis
-from src.models.non_meta_model import NonMetaModel
-from src.task_solving_models.base_ts_model import BaseTSModel
-from src.task_solving_models.ff_nn import FeedForwardNN
+from src.models_lightning.base_model_loss import loss_pis
+from src.models_lightning.non_meta_model import NonMetaModel
+from src.models_tasksolve.base_ts_model import BaseTSModel
+from src.models_tasksolve.ff_nn import FeedForwardNN
 from src.tasks.base_task import BaseTask
 from src.tasks.moons import MoonsTask
 from src.utils import lht_utils
@@ -182,11 +183,22 @@ def get_logger(cfg):
     return logger
 
 def start_mc_train_loop_no_lightning(cfg, task: BaseTask, ts_model: BaseTSModel):
+    print(f"Starting MC train loop with {cfg.model.m_monte_carlo} trajectories.")
     batch_size= cfg.model.batch_size
     sigma = cfg.datamodule.dataset.sigma
+    if cfg.model.sde_model.sigma_rescaling in ["static","dynamic"]:
+        sigma_factor = sigma
+        sqrt_sigma_factor = np.sqrt(sigma)
+    elif cfg.model.sde_model.sigma_rescaling == "none":
+        sigma_factor = 1.0
+        sqrt_sigma_factor = 1.0
     m_monte_carlo = cfg.model.m_monte_carlo # only parameter unique to MC method
     num_trajectories = cfg.datamodule.dl.batch_size
     dt = cfg.model.dt
+
+    print(f"Initialised with variables: batch_size={batch_size}, sigma={sigma}, sigma_factor={sigma_factor}, sqrt_sigma_factor={sqrt_sigma_factor}, m_monte_carlo={m_monte_carlo}, num_trajectories={num_trajectories}, dt={dt}")
+
+    #g_coef = np.sqrt(0.2) # TODO: replace... right now this is copied from PISNN
 
     num_t_samples = int(1/dt)
     # update dt to ensure we reach t_end=1
@@ -194,34 +206,70 @@ def start_mc_train_loop_no_lightning(cfg, task: BaseTask, ts_model: BaseTSModel)
 
     train_dataloader = DataLoader(task.training_dataset(), batch_size=batch_size, shuffle=True)
 
-    def get_P(w):
-        x, GT = train_dataloader.sampler().next() # replace with actual function
+    def get_ln_P(w):
+        data, GT = next(iter(train_dataloader))
+        
+        data = data.to("cuda")
+        GT = GT.to("cuda")
+        w = w.to("cuda") # TODO: this may not be necessary
 
-        y = ts_model.forward(x, w)
+        # neural net forward expects w in shape (trajectories,len)
+        # ... -> TODO: so i could actually get away with just passing around trajectories all at once, perhaps
+        if len(w.shape) == 1:
+            w = w.unsqueeze(0)
+
+        y = ts_model.forward(data, w)
+        #print("Output range:", y.min().item(), y.max().item())  # Debug statement
         l = task.loss(y, GT)
+        print(f"Loss: {l.item()}")
 
-        boltz_l = th.exp(-l / sigma)
-        return boltz_l
-    def get_N(w):
+        ln_boltz_l = -l / sigma
+        #print(f"P = exp(-{l.item()} / {sigma}) = {boltz_l.item()}")
+        return ln_boltz_l
+    def get_ln_N(w):
         n = w.shape[0]
-        dist = th.distributions.MultivariateNormal(th.zeros(n), th.eye(n))  # N(0, I_n)
-        return th.exp(dist.log_prob(w))  # Probability density function
+        device = w.device 
+        dist = th.distributions.MultivariateNormal(th.zeros(n, device=device), th.eye(n, device=device))  # N(0, I_n)
+        #print(f"Getting N probability of w where w={w}")
+        ln_n_prob = dist.log_prob(w)
+        #print(f"N = exp(N(0, I_n).log_prob(w)) = {n_prop.item()}")
+        return ln_n_prob  # Probability density function
     def get_f(w):
-        P = get_P(w)
-        N = get_N(w)
-        return P/N
+        #print(f"Getting f for w = x + math.sqrt(1 - t) * Z = {w}")
+        ln_P = get_ln_P(w)
+        ln_N = get_ln_N(w)# * 10000000000000
+        ln_f = ln_P - ln_N
+        #print(f"get_f: lnP - lnN = {ln_P.item()} - {ln_N.item()} = {ln_f.item()}")
+        f = th.exp(ln_f)
+        #print(f"get_f: f = exp(ln_f) = {f.item()}")
+        return f
     def get_nabla_f(f, w):
-        return th.autograd.grad(f, w, retain_graph=True)[0]
+        # todo: consider rewriting using Stein's lemma! avoids grad.
+        nabla_f = th.autograd.grad(f, w, retain_graph=True)[0]
+        #print(f"get_nabla_f: nabla_f = {nabla_f}")
+        return nabla_f
     def get_drift(x, t):
+        if not x.requires_grad:
+            x.requires_grad = True
         f_values = []
         for i in range(m_monte_carlo):
+            #print(f"\nStarting MC round {i}")
             Z = th.randn(ts_model.param_size())
+            Z = Z.to("cuda")
             f = get_f(x + math.sqrt(1 - t) * Z)
             f_values.append(f)
         nabla_f_values = [get_nabla_f(f, x) for f in f_values]
         sum_nabla_f = th.stack(nabla_f_values).sum(dim=0)
         sum_f = th.stack(f_values).sum()
+
+        sum_nabla_f = sum_nabla_f.to("cuda") # TODO: may not be necessary... or should be earlier
+        sum_f = sum_f.to("cuda") # TODO: may not be necessary... or should be earlier
+
+        #print(f"sum_nabla_f: {sum_nabla_f} ")
+        #print(f"sum_f: {sum_f.item()} ")
+
         drift = sum_nabla_f / sum_f
+        #print(f"Drift = sum_nabla_f / sum_f = {drift}")
         return drift
 
     
@@ -229,12 +277,15 @@ def start_mc_train_loop_no_lightning(cfg, task: BaseTask, ts_model: BaseTSModel)
     for _ in range(num_trajectories):
         ts = th.linspace(0, 1, num_t_samples)
         x = th.zeros(ts_model.param_size())
-        dt = ts[1] - ts[0]
+        x = x.to("cuda")
         for i in range(num_t_samples):
+            print(f"\nStarting time step {i}")
             t = ts[i]
-            drift = get_drift(x, t)
-            noise = th.randn_like(x) * math.sqrt(dt)
+            drift = get_drift(x, t) * sigma_factor
+            noise = th.randn_like(x) * math.sqrt(dt) * sqrt_sigma_factor
+            noise = noise.to("cuda") # TODO: double check if this is necessary
             x = x + drift * dt + noise
+            print(f"At time {t}, x = {x}")
         # Final state X_T!
         final_trajectories.append(x)
     
@@ -321,10 +372,10 @@ def run_with_config(cfg: DictConfig):
     #print(cfg) 
     #cfg.mode.hydra.run.dir = "logs/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
 
-    task = hydra.utils.instantiate(
+    task: BaseTask = hydra.utils.instantiate(
         cfg.task, _convert_="partial"
     )
-    ts_model = hydra.utils.instantiate(
+    ts_model: BaseTSModel = hydra.utils.instantiate(
         cfg.task_solving_model, DATASIZE=task.datasize(), GTSIZE=task.gtsize(), _convert_="partial"
     )
     OPTIM = cfg.model.optimizer
@@ -360,6 +411,8 @@ def run_with_config(cfg: DictConfig):
             best_trajectory = final_trajectories[final_val_task_losses.argmin()]
 
             final_test_loss_for_best_trajectory = float(optimizer.task_weights_to_test_loss(best_trajectory.unsqueeze(0)))
+
+        task.viz(ts_model, best_trajectory, f"best_final_{ts_model.__class__.__name__}", cfg.model.fig_path)
 
         ts_model.save_checkpoint(final_trajectories, f"{final_trajectories.shape[0]}_final_{ts_model.__class__.__name__}.pt")
         ts_model.save_checkpoint(best_trajectory, f"best_final_{ts_model.__class__.__name__}.pt")

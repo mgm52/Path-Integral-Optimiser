@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 from omegaconf import DictConfig
 import pytorch_lightning as pl
 import torch
-from src.task_solving_models.base_ts_model import BaseTSModel
+from src.models_tasksolve.base_ts_model import BaseTSModel
 from src.tasks.base_task import BaseTask
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 

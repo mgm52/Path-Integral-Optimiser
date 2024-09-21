@@ -1,4 +1,4 @@
-from src.task_solving_models.base_ts_model import BaseTSModel
+from src.models_tasksolve.base_ts_model import BaseTSModel
 from src.utils.nn_creation import flat_parameters, set_params
 from src.utils.time_utils import TimeTester
 import torch
@@ -17,7 +17,7 @@ class FeedForwardNN(BaseTSModel):
         ttimer = TimeTester("Forward timer", disabled=True)
         assert len(x.shape) == 2
         assert x.shape[1] == self.DATASIZE
-        assert len(w.shape) == 2
+        assert len(w.shape) == 2, w.shape
 
         trajectories_in_batch = w.shape[0]
         samples_in_batch = x.shape[0]

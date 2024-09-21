@@ -4,7 +4,7 @@ import numpy as np
 import torch as th
 from torch import nn
 
-from src.networks.time_conder import TimeConder
+from src.models_nn.time_conder import TimeConder
 from src.utils.loss_helper import nll_unit_gaussian
 
 import pdb
