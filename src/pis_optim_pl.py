@@ -252,13 +252,16 @@ def start_mc_train_loop_no_lightning(cfg, task: BaseTask, ts_model: BaseTSModel)
         if not x.requires_grad:
             x.requires_grad = True
         f_values = []
+        nabla_f_values = []
         for i in range(m_monte_carlo):
             #print(f"\nStarting MC round {i}")
             Z = th.randn(ts_model.param_size())
             Z = Z.to("cuda")
-            f = get_f(x + math.sqrt(1 - t) * Z)
+            w = x + math.sqrt(1 - t) * Z
+            f = get_f(w)
             f_values.append(f)
-        nabla_f_values = [get_nabla_f(f, x) for f in f_values]
+            nabla_f_values.append(get_nabla_f(f, w))
+        #nabla_f_values = [get_nabla_f(f, x) for f in f_values]
         sum_nabla_f = th.stack(nabla_f_values).sum(dim=0)
         sum_f = th.stack(f_values).sum()
 
