@@ -1,9 +1,41 @@
-# [Path Integral Sampler: a stochastic control approach for sampling](https://arxiv.org/abs/2111.15141)
+# Path Integral Optimiser
 
+This repository implements a diffusion-based optimizer using PyTorch Lightning and a custom neural network called PISNN. This repository is largely an adaptation of Zhang et al.'s [Path Integral Sampler](https://arxiv.org/abs/2111.15141), the setup for which remains the same.
 
-[![PIS Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1NOHGt2iHoETgbSh4z7dLep95-zN8FNKL?usp=sharing)
+While SGD, Adam, Adagrad and PIS-MC (monte-carlo approximation) are more straightforwardly trained through optimisers in pis_optim_pl.py, PIO itself has a rather complicated setup adapted from the original PIS repo. Rather than be treated as an optimiser, PIO is seen as an optimization target for which the dataset is the Boltzmann transformation of its task-solving-model's parameters. Below is an overview of how PIO is trained, broken down into sections of PISBasedOptimizer, relied on by pis_optim_pl.py.
 
-![PIS](asserts/pis.png)
+Defining the forward loop, and attachments to data:
+```
+PISBasedOptimizer
+    .model: BaseModel(LightningModule)
+        .sde_model: PISNN
+            .f()
+            .g()
+        .training_step(batch) -> loss: float
+            # this is where the model is actually run
+            # i.e. sdeint_fn runs torchsde.sdeint(sde, y0, ts)
+        .configure_optimizers() -> opt: Optimizer
+            .task_weights_to_loss()
+            .task_next_data() # updates .x, .GT for task_weights_to_loss
+```
+Performing the Boltzmann transformation:
+```
+    .datamodule: MyDataModule
+        .dataset: OptGeneral
+            .V()    # == .task_weights_to_loss()
+            .nll_target_fn()
+        .batch_size: int
+```
+Defining the backwards loop:
+```
+    .start_train_loop()
+        # trainer.fit(self.model, self.datamodule)
+            # opt = self.model.configure_optimizers()
+            # for data in self.datamodule.next():
+                # loss = self.model.training_step()
+                # opt.update()
+```
+
 
 ## Setup
 
@@ -25,6 +57,33 @@ pip install .
 
 ## Reproduce
 
+Use run_all_results.py to queue up sweeping & seeding runs. Right now this is left as a hardcoded script, with choices in `experiments` and `optimizers`.
+
+```
+python run_all_results.py
+```
+
+
+## Extension Ideas
+- Recursive training: train a PIS-based optimizer using a PIS-based optimizer, instead of e.g. Adam?
+- Integrate D-Adaptation
+  - For PIS learning
+  - For finding optimal sigma value?
+- Make PIS-Grad viable
+  - Use a cheap heuristic grad?
+  - Compare using different minibatches per grad computation vs same minibatch
+- Methods to improve PIS's stability
+  - Other sigma schedules - noisy, to avoid local minima?
+  - Gradient clipping
+  - Stochastic Weight Averaging?
+- Can we initialize PIS to produce weights that correspond with e.g. a Xavier initilisation of task model? Solves issue PIS paper mentions of not knowing good prior to use.
+  - Thougthat an advantage of PIS seems to be that it is more resiliant to initialisation? Meaning it works on black box models where good init is unclear anyway.
+  - Some work on this in repo already, but incomplete
+ 
+## Further PIS Details
+
+### PIS Reproduce
+
 ```
 python run.py experiment=ou.yaml logger=wandb
 ```
@@ -33,7 +92,7 @@ See the [folder](configs/experiment) for more experiment configs.
 
 There are some [results](https://wandb.ai/qinsheng/pub_pis?workspace=user-qinsheng) reproduced by the repo.
 
-## Reference
+### PIS Reference
 
 ```tex
 @inproceedings{zhang2021path,
@@ -43,23 +102,3 @@ There are some [results](https://wandb.ai/qinsheng/pub_pis?workspace=user-qinshe
   year      = {2022}
 }
 ```
-
-## MICS:
-
-- [sde-sampler](https://gitlab.com/qsh.zh/sde-sampler/-/tree/rings) Uncleaned code used for experiments in paper.
-- SDE parameters `dt,g` are modified due to [the issue](https://github.com/google-research/torchsde/issues/109).
-
-## Ideas & Experiments
-- Recursive training: could I train a PIS-based optimizer using a PIS-based optimizer, instead of e.g. Adam?
-- Integrate D-Adaptation
-  - For PIS learning
-  - For finding optimal sigma value?
-- PIS non-grad net could perform better due to grad computation being expensive
-  - Or, could I use some cheap heuristic grads somehow?
-  - Compare using different minibatches per grad computation vs same minibatch
-- Methods to improve PIS's stability
-  - Decaying sigma
-  - Gradient clipping
-  - Stochastic Weight Averaging?
-- Can we somehow initialize PIS to produce weights that correspond with e.g. a xavier initilisation of task model? Solves issue PIS paper mentions of not knowing good prior to use.
-  - Though note that an advantage of PIS seems to be that it seems more resiliant to initialisation, maybe? Which means it works on black box models where good init is unclear?
