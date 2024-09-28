@@ -115,35 +115,26 @@ def run_experiment(experiment_name, optimizer_name, extra_choice=False, mc_mega_
 RUN_SEEDING_ONLY = False
 
 if __name__ == "__main__":
-    experiments = ["opt_carrillo", "opt_mini", "opt_mnist"] #, ""
-    optimizers = ["pis"] #["pis-mc"]
-    #extra_choice = True
+    experiments = ["opt_carrillo", "opt_mini", "opt_mnist"]
+    optimizers = ["pis"] #["pis", "pis-mc", "adam", "sgd", "adagrad"]
 
+    extra_choices = [False, True]
     mc_mega_boost = False
     mc_hundred = False
 
-    #run_experiment("opt_mnist", "sgd")
-    #pass
-
-    for extra_choice in [False, True]:
+    for extra_choice in extra_choices:
         for experiment in experiments:
             seed_directories = []
             for optimizer in optimizers:
                 print(f"Running experiment {experiment} with optimizer {optimizer}")
-                seed_directory = run_experiment(experiment, optimizer, extra_choice, mc_mega_boost, mc_hundred, force_seed_steps=(("64" if extra_choice else "32") if optimizer == "pis-mc" else ""))
+                seed_directory = run_experiment(
+                    experiment,
+                    optimizer,
+                    extra_choice,
+                    mc_mega_boost,
+                    mc_hundred,
+                    force_seed_steps=(("64" if extra_choice else "32") if optimizer == "pis-mc" else ""))
                 seed_directories.append(seed_directory)
 
             # Visualize all seeded results
             subprocess.run(["python", "viz.py"] + seed_directories)
-
-    # mc_mega_boost = True
-    # extra_choice = True
-    # for experiment in ["opt_carrilo", "opt_mini"]:
-    #     seed_directories = []
-    #     for optimizer in ["pis-mc"]:
-    #         print(f"Running experiment {experiment} with optimizer {optimizer}")
-    #         seed_directory = run_experiment(experiment, optimizer, extra_choice, mc_mega_boost, mc_hundred)
-    #         seed_directories.append(seed_directory)
-
-    #     # Visualize all seeded results
-    #     subprocess.run(["python", "viz.py"] + seed_directories)
