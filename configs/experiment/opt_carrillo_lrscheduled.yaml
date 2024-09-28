@@ -37,7 +37,7 @@ trainer:
 model:
   lr: 0.01
   # This is the batch size in the task
-  batch_size: 100
+  batch_size: 1
   sde_model:
     f_format: "f"
     sigma_rescaling: "none"

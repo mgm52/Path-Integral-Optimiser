@@ -37,7 +37,7 @@ trainer:
 model:
   lr: 0.01
   # This is the batch size in the task
-  batch_size: 100
+  batch_size: 1
   sde_model:
     f_format: "f"
     sigma_rescaling: "none"
@@ -46,8 +46,8 @@ model:
   initial_target_matching_batches: 0
   initial_target_matching_additive: False
   lr_plateau: False
-  m_monte_carlo: 64 # only used in pis-mc
   fig_path: "/home/max/pis"
+  sigma: 0.01 # actual sigma value is in datamodule.dataset... This is here as a hack :/
 
 datamodule:
   dataset:

@@ -25,6 +25,7 @@ from src.utils.nn_creation import flat_parameters
 
 from src.utils.time_utils import TimeTester
 import torch as th
+from src.optimizers.pio_monte_carlo import PIOMonteCarlo
 
 import pdb
 
@@ -186,118 +187,59 @@ def start_mc_train_loop_no_lightning(cfg, task: BaseTask, ts_model: BaseTSModel)
     print(f"Starting MC train loop with {cfg.model.m_monte_carlo} trajectories.")
     batch_size= cfg.model.batch_size
     sigma = cfg.datamodule.dataset.sigma
-    if cfg.model.sde_model.sigma_rescaling in ["static","dynamic"]:
-        sigma_factor = sigma
-        sqrt_sigma_factor = np.sqrt(sigma)
-    elif cfg.model.sde_model.sigma_rescaling == "none":
-        sigma_factor = 1.0
-        sqrt_sigma_factor = 1.0
     m_monte_carlo = cfg.model.m_monte_carlo # only parameter unique to MC method
     num_trajectories = cfg.datamodule.dl.batch_size
     dt = cfg.model.dt
 
-    print(f"Initialised with variables: batch_size={batch_size}, sigma={sigma}, sigma_factor={sigma_factor}, sqrt_sigma_factor={sqrt_sigma_factor}, m_monte_carlo={m_monte_carlo}, num_trajectories={num_trajectories}, dt={dt}")
+    print(f"Initialised with variables: batch_size={batch_size}, sigma={sigma}, m_monte_carlo={m_monte_carlo}, num_trajectories={num_trajectories}, dt={dt}")
 
     #g_coef = np.sqrt(0.2) # TODO: replace... right now this is copied from PISNN
 
-    num_t_samples = int(1/dt)
-    # update dt to ensure we reach t_end=1
-    dt = 1/num_t_samples
-
     train_dataloader = DataLoader(task.training_dataset(), batch_size=batch_size, shuffle=True)
-
-    def get_ln_P(w):
-        data, GT = next(iter(train_dataloader))
-        
-        data = data.to("cuda")
-        GT = GT.to("cuda")
-        w = w.to("cuda") # TODO: this may not be necessary
-
-        # neural net forward expects w in shape (trajectories,len)
-        # ... -> TODO: so i could actually get away with just passing around trajectories all at once, perhaps
-        if len(w.shape) == 1:
-            w = w.unsqueeze(0)
-
-        y = ts_model.forward(data, w)
-        #print("Output range:", y.min().item(), y.max().item())  # Debug statement
-        l = task.loss(y, GT)
-        print(f"Loss: {l.item()}")
-
-        ln_boltz_l = -l / sigma
-        #print(f"P = exp(-{l.item()} / {sigma}) = {boltz_l.item()}")
-        return ln_boltz_l
-    def get_ln_N(w):
-        n = w.shape[0]
-        device = w.device 
-        dist = th.distributions.MultivariateNormal(th.zeros(n, device=device), th.eye(n, device=device))  # N(0, I_n)
-        #print(f"Getting N probability of w where w={w}")
-        ln_n_prob = dist.log_prob(w)
-        #print(f"N = exp(N(0, I_n).log_prob(w)) = {n_prop.item()}")
-        return ln_n_prob  # Probability density function
-    def get_f(w):
-        #print(f"Getting f for w = x + math.sqrt(1 - t) * Z = {w}")
-        ln_P = get_ln_P(w)
-        ln_N = get_ln_N(w)# * 10000000000000
-        ln_f = ln_P - ln_N
-        #print(f"get_f: lnP - lnN = {ln_P.item()} - {ln_N.item()} = {ln_f.item()}")
-        f = th.exp(ln_f)
-        #print(f"get_f: f = exp(ln_f) = {f.item()}")
-        return f
-    def get_nabla_f(f, w):
-        # todo: consider rewriting using Stein's lemma! avoids grad.
-        nabla_f = th.autograd.grad(f, w, retain_graph=True)[0]
-        #print(f"get_nabla_f: nabla_f = {nabla_f}")
-        return nabla_f
-    def get_drift(x, t):
-        if not x.requires_grad:
-            x.requires_grad = True
-        f_values = []
-        nabla_f_values = []
-        for i in range(m_monte_carlo):
-            #print(f"\nStarting MC round {i}")
-            Z = th.randn(ts_model.param_size())
-            Z = Z.to("cuda")
-            w = x + math.sqrt(1 - t) * Z
-            f = get_f(w)
-            f_values.append(f)
-            nabla_f_values.append(get_nabla_f(f, w))
-        #nabla_f_values = [get_nabla_f(f, x) for f in f_values]
-        sum_nabla_f = th.stack(nabla_f_values).sum(dim=0)
-        sum_f = th.stack(f_values).sum()
-
-        sum_nabla_f = sum_nabla_f.to("cuda") # TODO: may not be necessary... or should be earlier
-        sum_f = sum_f.to("cuda") # TODO: may not be necessary... or should be earlier
-
-        #print(f"sum_nabla_f: {sum_nabla_f} ")
-        #print(f"sum_f: {sum_f.item()} ")
-
-        drift = sum_nabla_f / sum_f
-        #print(f"Drift = sum_nabla_f / sum_f = {drift}")
-        return drift
-
     
+    nmm: NonMetaModel = NonMetaModel(ts_model, task, cfg.model, "replace-me-with-mc").to("cuda")
+    train_dataloader = nmm.train_dataloader()
+    train_iter = iter(train_dataloader)
+
+    opt = PIOMonteCarlo(params=nmm.get_params_for_opt(), sigma=sigma, m_monte_carlo=m_monte_carlo, dt=dt, sigma_rescaling=True)
+
     final_trajectories = []
     for _ in range(num_trajectories):
-        ts = th.linspace(0, 1, num_t_samples)
-        x = th.zeros(ts_model.param_size())
-        x = x.to("cuda")
-        for i in range(num_t_samples):
-            print(f"\nStarting time step {i}")
-            t = ts[i]
-            drift = get_drift(x, t) * sigma_factor
-            noise = th.randn_like(x) * math.sqrt(dt) * sqrt_sigma_factor
-            noise = noise.to("cuda") # TODO: double check if this is necessary
-            x = x + drift * dt + noise
-            print(f"At time {t}, x = {x}")
-        # Final state X_T!
-        final_trajectories.append(x)
-    
+        while not opt.completed_trajectory:
+            #print(f"Not completed trajectory, running...")
+            try:
+                data, GT = next(train_iter)
+            except StopIteration:
+                # Reset iterator for a new epoch when the dataloader runs out of data
+                train_iter = iter(train_dataloader)
+                data, GT = next(train_iter)            
+            data = data.to("cuda")
+            GT = GT.to("cuda")
+            def closure():
+                y = nmm.forward(data)
+                l = task.loss(y, GT)
+                opt.zero_grad()
+                l.backward() # TODO: this is unnecessary and wasteful, because optimizer already does autograd backwards... maybe i could optimize to use this somehow tho
+                #print(f"Outer loss: {l.item()}")
+                return l
+            #print(f"Gonna step the opt...")
+            opt.step(closure)
+        final_trajectories.append(opt.extract_parameters_1d())
+
     # put final_trajectories into a tensor in shape (trajectories, *data_shape)
     final_trajectories = th.stack(final_trajectories)
     return final_trajectories
 
 def start_sgd_train_loop(ts_model, task, cfg, optimizer_name):
-    #pdb.set_trace()
+    # HACKHACK to pass sigma to model config... Right now it's in datamodule for legacy PIS setup
+    cfg.model.sigma = cfg.datamodule.dataset.sigma
+    # HACKHACK to pass gradient_clip_val to model config... So PIS-MC can use it within optimizer
+    cfg.model.gradient_clip_val = cfg.trainer.gradient_clip_val
+
+    # TODO: Double check this is necessary...
+    if cfg.get("seed"):
+        seed_everything(cfg.seed, workers=True)
+
     model = NonMetaModel(ts_model, task, cfg.model, optimizer_name).to("cuda")
     callbacks = [NonMetaLogCB()]
 
@@ -343,6 +285,7 @@ def start_sgd_train_loop(ts_model, task, cfg, optimizer_name):
         test_loss += task.loss(y, GT)
     test_loss /= len(model.val_dataloader())
 
+    #JamWandb.finish()
     return float(val_loss), float(test_loss), w.squeeze()
 
 # TODO: move this into a class, like the PIS optimizer...
@@ -371,6 +314,7 @@ def mc_task_weights_to_test_loss(cfg, w, ts_model: BaseTSModel, task: BaseTask):
 
     return l
 
+import wandb
 def run_with_config(cfg: DictConfig):
     #print(cfg) 
     #cfg.mode.hydra.run.dir = "logs/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
@@ -384,7 +328,7 @@ def run_with_config(cfg: DictConfig):
     OPTIM = cfg.model.optimizer
 
     val_loss = None
-    if OPTIM in ["sgd", "adam", "adagrad"]:
+    if OPTIM in ["sgd", "adam", "adagrad", "pis-mc"]:
         val_loss, test_loss, w = start_sgd_train_loop(ts_model, task, cfg, OPTIM)
 
         ts_model.save_checkpoint(w, f"best_final_{ts_model.__class__.__name__}.pt")
@@ -392,28 +336,28 @@ def run_with_config(cfg: DictConfig):
         log.info("Final validation loss: " + str(val_loss))
         log.info("Final test loss: " + str(test_loss))
 
-    elif OPTIM in ["pis", "pis-mc"]:
-        if OPTIM == "pis-mc":
-            final_trajectories = start_mc_train_loop_no_lightning(cfg, task, ts_model)
-            final_val_task_losses = mc_task_weights_to_validation_loss(cfg, final_trajectories, ts_model, task)
+    elif OPTIM in ["pis"]:
+        # if OPTIM == "pis-mc":
+        #     final_trajectories = start_mc_train_loop_no_lightning(cfg, task, ts_model)
+        #     final_val_task_losses = mc_task_weights_to_validation_loss(cfg, final_trajectories, ts_model, task)
             
-            min_val_loss = float(final_val_task_losses.min())
-            best_trajectory = final_trajectories[final_val_task_losses.argmin()]
+        #     min_val_loss = float(final_val_task_losses.min())
+        #     best_trajectory = final_trajectories[final_val_task_losses.argmin()]
             
-            final_test_loss_for_best_trajectory = float(mc_task_weights_to_test_loss(cfg, best_trajectory.unsqueeze(0), ts_model, task))
+        #     final_test_loss_for_best_trajectory = float(mc_task_weights_to_test_loss(cfg, best_trajectory.unsqueeze(0), ts_model, task))
 
-        else:
-            optimizer = PISBasedOptimizer(
-                cfg=cfg,
-                task=task,
-                ts_model=ts_model)
-            final_trajectories = optimizer.start_train_loop()
-            final_val_task_losses = optimizer.task_weights_to_validation_loss(final_trajectories)
-        
-            min_val_loss = float(final_val_task_losses.min())
-            best_trajectory = final_trajectories[final_val_task_losses.argmin()]
+        #else:
+        optimizer = PISBasedOptimizer(
+            cfg=cfg,
+            task=task,
+            ts_model=ts_model)
+        final_trajectories = optimizer.start_train_loop()
+        final_val_task_losses = optimizer.task_weights_to_validation_loss(final_trajectories)
+    
+        min_val_loss = float(final_val_task_losses.min())
+        best_trajectory = final_trajectories[final_val_task_losses.argmin()]
 
-            final_test_loss_for_best_trajectory = float(optimizer.task_weights_to_test_loss(best_trajectory.unsqueeze(0)))
+        final_test_loss_for_best_trajectory = float(optimizer.task_weights_to_test_loss(best_trajectory.unsqueeze(0)))
 
         task.viz(ts_model, best_trajectory, f"best_final_{ts_model.__class__.__name__}", cfg.model.fig_path)
 

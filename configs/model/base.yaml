@@ -9,7 +9,7 @@ f_func:
   channels: 64
 
 g_func:
-  _target_: src.networks.simple.IdentityOne
+  _target_: src.models_nn.simple.IdentityOne
 
 sde_model:
   _target_: src.models_nn.pis_nn.PISNN
@@ -35,3 +35,7 @@ data_ndim: ${datamodule.ndim}
 data_shape: ${datamodule.shape}
 dt: 0.05
 t_end: 5.0
+mc_max_steps_total: 64
+mc_ts_per_mc_step: 0.125
+gradient_clip_val: 0.0
+sigma: 0.01

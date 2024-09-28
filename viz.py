@@ -27,6 +27,7 @@ def read_yaml(file_path):
         except yaml.YAMLError as exc:
             print(exc)
 
+# TODO: refactor all these... yikes
 def get_training_metrics_df(dir_path):
     # Get all subfolders in csv folder
     csv_dir_path = os.path.join(dir_path, "csv")
@@ -48,7 +49,11 @@ def get_final_validation_loss(dir_path):
             lines = log_file.readlines()
             for line in lines:
                 if 'validation loss:' in line:
-                    final_validation_loss = float(line.split(':')[-1].strip())
+                    final_validation_loss_str = line.split(':')[-1].strip()
+                    if final_validation_loss_str == "nan":
+                        final_validation_loss = 99999
+                    else:
+                        final_validation_loss = float(line.split(':')[-1].strip())
     return final_validation_loss
 
 def get_final_test_loss(dir_path):
@@ -59,7 +64,11 @@ def get_final_test_loss(dir_path):
             lines = log_file.readlines()
             for line in lines:
                 if 'test loss:' in line:
-                    final_test_loss = float(line.split(':')[-1].strip())
+                    final_test_loss_str = line.split(':')[-1].strip()
+                    if final_test_loss_str == "nan":
+                        final_test_loss = 99999
+                    else:
+                        final_test_loss = float(line.split(':')[-1].strip())
     return final_test_loss
 
 def get_first_timestamp(dir_path):
@@ -172,15 +181,16 @@ def plot_multirun_final_loss_over_time(run_datas, log_scale=True):
     timestamps = [data['final_timestamp'] for data in run_datas]
     validation_losses = [data['final_val_loss'] for data in run_datas]
 
-    # If any validation loss is None, remove from both lists
-    validation_losses, timestamps = zip(*[(v, t) for v, t in zip(validation_losses, timestamps) if v is not None])
-    
+    # Remove NaN and None values from both lists
+    validation_losses, timestamps = zip(*[(v, t) for v, t in zip(validation_losses, timestamps) 
+                                          if v is not None and not np.isnan(v)])
+
     # Convert timestamps to minutes relative to the earliest timestamp
     earliest_timestamp = min([data['first_timestamp'] for data in run_datas])
     timestamps_in_minutes = [(t - earliest_timestamp).total_seconds() / 60 for t in timestamps]
 
     # Plotting
-    plt.figure(figsize=(8,4))
+    plt.figure(figsize=(8, 4))
     plt.scatter(timestamps_in_minutes, validation_losses, marker=MarkerStyle('x'))
     plt.title('Final Task Validation Loss')
     plt.xlabel(r'\textbf{Time Since Start (minutes)}')
@@ -192,10 +202,14 @@ def plot_multirun_final_loss_over_time(run_datas, log_scale=True):
     plt.plot(timestamps_in_minutes, p(timestamps_in_minutes), "r--")
 
     plt.tight_layout()
-    if log_scale:
+
+    # Check if log scale can be applied: filter NaN, None, and non-positive values
+    if log_scale and np.any(np.array(validation_losses) > 0):
         plt.yscale('log')
         plt.savefig(f"{root_dir}/final_validation_loss_over_time_log.pdf")
     else:
+        if log_scale:
+            print("Warning: Log scale cannot be applied due to entirely NaN or non-positive values in validation losses.")
         plt.savefig(f"{root_dir}/final_validation_loss_over_time.pdf")
 
     plt.close()
@@ -227,8 +241,9 @@ def plot_run_train_loss_over_time(run_data, log_scale=True, x_axis='step'):
     plt.title('Median (+/- max/min over trajectories) \nTask Training Loss for Best Run')
     plt.legend()
 
+
     plt.tight_layout()
-    if log_scale:
+    if log_scale and np.any(v_median > 0):
         plt.yscale('log')
         plt.savefig(f"{root_dir}/v_median_{x_axis}_log.pdf")
     else:
@@ -256,7 +271,7 @@ def plot_run_lr_over_time(run_data, log_scale=True):
     plt.ylabel(r'\textbf{Value}')
     
     plt.tight_layout()
-    if log_scale:
+    if log_scale and np.any(lrs > 0):
         plt.yscale('log')
         plt.savefig(f"{root_dir}/lr_over_time_log.pdf")
     else:
@@ -318,7 +333,7 @@ def plot_multirun_all_train_loss_over_time(run_datas, log_scale=False):
     plt.title('Median Task Training Loss for All Runs')
 
     plt.tight_layout()
-    if log_scale:
+    if log_scale and np.any(v_median > 0):
         plt.yscale('log')
         plt.savefig(f"{root_dir}/v_median_all_runs_log.pdf")
     else:
@@ -342,7 +357,7 @@ def plot_multirun_all_min_train_loss_over_time(run_datas, log_scale=False):
     plt.ylabel(r'\textbf{Loss}')
     plt.title('Min Task Training Loss for All Runs')
     plt.tight_layout()
-    if log_scale:
+    if log_scale and np.any(v_min > 0):
         plt.yscale('log')
         plt.savefig(f"{root_dir}/v_min_all_runs_log.pdf")
     else:
@@ -352,7 +367,7 @@ def plot_multirun_all_min_train_loss_over_time(run_datas, log_scale=False):
 import numpy as np
 import matplotlib.pyplot as plt
 
-def plot_multirun_combined_train_loss_over_time(run_datas_list, labelling_config="optimizer", log_scale=False, x_axis='step'):
+def plot_multirun_combined_val_over_time(run_datas_list, labelling_config="optimizer", log_scale=False, x_axis='step', y_key="V_min", y_label="Loss"):
     shortest_run_end = None
 
     # Loop over run_datas in run_datas_list
@@ -364,7 +379,7 @@ def plot_multirun_combined_train_loss_over_time(run_datas_list, labelling_config
 
         for run_data in run_datas:
             df = run_data['metrics_df']
-            v_mins.append(df['V_min'])
+            v_mins.append(df[y_key])
 
             if x_axis == 'step':
                 x_values.append(df.index)
@@ -401,26 +416,27 @@ def plot_multirun_combined_train_loss_over_time(run_datas_list, labelling_config
 
     # Finalize the plot
     plt.xlabel(r"\textbf{" + x_axis.capitalize() + "}")
-    plt.ylabel(r"\textbf{Loss}")
+    plt.ylabel(r"\textbf{" + y_label + "}")
     plt.grid(True, which="both", ls="-", alpha=0.3)
-    plt.title(f"{run_datas_list[0][0]['task_name']}:\nTask Training Loss over {sum([len(rd) for rd in run_datas_list])} Runs (95\% CI)")
+    plt.title(f"{run_datas_list[0][0]['task_name']}:\nTask Training {y_label} over {sum([len(rd) for rd in run_datas_list])} Runs (95\% CI)")
     plt.legend()
     plt.tight_layout()
-    if log_scale:
+    low_y_key = y_key.lower()
+    if log_scale and np.any(med_values > 0):
         plt.yscale('log')
-        plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}_log.pdf")
-        print(f"{root_dir}/v_min_combined_runs_{x_axis}_log.pdf")
+        plt.savefig(f"{root_dir}/{low_y_key}_combined_runs_{x_axis}_log.pdf")
+        print(f"{root_dir}/{low_y_key}_combined_runs_{x_axis}_log.pdf")
     else:
-        plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}.pdf")
+        plt.savefig(f"{root_dir}/{low_y_key}_combined_runs_{x_axis}.pdf")
 
     # If shortest_run_end is not None, create an additional plot with trimmed x-axis
     if shortest_run_end is not None:
         plt.xlim(left=0, right=shortest_run_end)  # Explicitly set the left limit to 0
-        plt.title(f"Task Training Loss over {sum([len(rd) for rd in run_datas_list])} Runs (95\% CI)")
+        plt.title(f"Task Training {y_label} over {sum([len(rd) for rd in run_datas_list])} Runs (95\% CI)")
         if log_scale:
-            plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}_log_trimmed.pdf")
+            plt.savefig(f"{root_dir}/{low_y_key}_combined_runs_{x_axis}_log_trimmed.pdf")
         else:
-            plt.savefig(f"{root_dir}/v_min_combined_runs_{x_axis}_trimmed.pdf")
+            plt.savefig(f"{root_dir}/{low_y_key}_combined_runs_{x_axis}_trimmed.pdf")
 
     plt.close()
 
@@ -549,7 +565,10 @@ if __name__ == "__main__":
                 plot_multirun_all_train_loss_over_time(run_datas, log_scale)
                 plot_multirun_all_min_train_loss_over_time(run_datas, log_scale)
                 for x_axis in ["step", "time", "examples"]:
-                    plot_multirun_combined_train_loss_over_time([run_datas], "optimizer", log_scale, x_axis)
+                    plot_multirun_combined_val_over_time([run_datas], "optimizer", log_scale, x_axis)
+                for x_axis in ["step", "time", "examples"]:
+                    plot_multirun_combined_val_over_time([run_datas], "optimizer", log_scale, x_axis, "param_norm", "TSM Parameter Norm")
+
             mean_tl, std_tl, all_tl = get_multirun_final_test_loss(run_datas)
             with open(f"{root_dir}/final_test_loss.txt", "w") as f:
                 f.write(f"{mean_tl} +/- {std_tl} over {len(run_datas)} runs ({all_tl})\n")
@@ -598,8 +617,12 @@ if __name__ == "__main__":
 
         for x_axis in ["step", "time", "examples"]:
             for log_scale in [True, False]:
-                plot_multirun_combined_train_loss_over_time(run_datas_list, "optimizer", log_scale, x_axis)
-        
+                plot_multirun_combined_val_over_time(run_datas_list, "optimizer", log_scale, x_axis)
+        for x_axis in ["step", "time", "examples"]:
+            for log_scale in [True, False]:
+                plot_multirun_combined_val_over_time(run_datas_list, "optimizer", log_scale, x_axis, "param_norm", "TSM Parameter Norm")
+
+
         means_stds = [get_multirun_final_test_loss(run_datas) for run_datas in run_datas_list]
         with open(f"{root_dir}/final_test_losses.txt", "w") as f:
             # write each mean and std on a new line

@@ -13,7 +13,7 @@ class WeightOut(BaseTSModel):
         # x is of shape (samples_in_batch, DATASIZE)
         # w is of shape (trajectories_in_batch, WEIGHTSIZE)
         # return shape (trajectories_in_batch, samples_in_batch, GTSIZE)
-        print(f"DATASIZE: {self.DATASIZE}, GTSIZE: {self.GTSIZE}")
+        #print(f"DATASIZE: {self.DATASIZE}, GTSIZE: {self.GTSIZE}")
         assert x.shape[0] == 1, f"Expected shape dim 0 to be (1), actual x.shape {x.shape}" # Only one sample in batch for carrillo
         assert len(w.shape) == 2
         return w.unsqueeze(1)

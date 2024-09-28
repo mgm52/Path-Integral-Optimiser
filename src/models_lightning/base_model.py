@@ -6,7 +6,7 @@ from jammy import hyd_instantiate
 from omegaconf import DictConfig
 from pytorch_lightning import LightningModule
 
-from src.models_lightning.loss import loss_pis
+from src.models_lightning.base_model_loss import loss_pis
 from src.utils.sampling import generate_traj
 
 # pylint: disable=too-many-ancestors,arguments-differ,attribute-defined-outside-init,unused-argument,too-many-instance-attributes, abstract-method

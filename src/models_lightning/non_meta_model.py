@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 import pytorch_lightning as pl
 import torch
 from src.models_tasksolve.base_ts_model import BaseTSModel
+from src.optimizers.pio_monte_carlo import PIOMonteCarlo
 from src.tasks.base_task import BaseTask
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 
@@ -29,26 +30,38 @@ class NonMetaModel(pl.LightningModule):
     def forward(self, x):
         return self.ts_model.forward(x, self.w.unsqueeze(0))
 
+    # in automatic mode: this just does batch -> loss (which we're in)
+    # in manual mode: this does batch -> loss -> param update
     def training_step(self, batch, batch_idx):
         x, GT = batch
         y = self.forward(x)
         loss = self.task.loss(y, GT)
         self.log('train_loss', loss)
+        self.log('param_norm', self.w.norm())
         return loss
+
+    def get_params_for_opt(self):
+        return [self.w]
 
     def configure_optimizers(self):
         if self.optimizer_name == "sgd":
-            optimizer = torch.optim.SGD([self.w], lr=self.cfg.lr)
+            optimizer = torch.optim.SGD(self.get_params_for_opt(), lr=self.cfg.lr)
         elif self.optimizer_name == "adam":
             b1 = self.cfg.b1 if hasattr(self.cfg, "b1") else 0.9
             b2 = self.cfg.b2 if hasattr(self.cfg, "b2") else 0.999
-            optimizer = torch.optim.Adam([self.w], lr=self.cfg.lr, betas=(b1, b2))
+            optimizer = torch.optim.Adam(self.get_params_for_opt(), lr=self.cfg.lr, betas=(b1, b2))
         elif self.optimizer_name == "adagrad":
-            optimizer = torch.optim.Adagrad([self.w], lr=self.cfg.lr)
+            optimizer = torch.optim.Adagrad(self.get_params_for_opt(), lr=self.cfg.lr)
+        elif self.optimizer_name == "pis-mc":
+            optimizer = PIOMonteCarlo(
+                self.get_params_for_opt(),
+                sigma=self.cfg.sigma,
+                mc_max_steps_total=self.cfg.mc_max_steps_total,
+                mc_ts_per_mc_step=self.cfg.mc_ts_per_mc_step,
+                max_grad_norm=self.cfg.gradient_clip_val)
         return optimizer
 
     def train_dataloader(self):
-        # Assuming `task` has a method called `get_train_dataloader()` that returns a PyTorch DataLoader object
         return DataLoader(self.task.training_dataset(), batch_size=self.cfg.batch_size, shuffle=True)
     
     def val_dataloader(self):

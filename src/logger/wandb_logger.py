@@ -259,10 +259,10 @@ class WandbLogger(LightningLoggerBase):
 
     # @rank_zero_only
     # def finalize(self, status: str) -> None:
-    # # log checkpoints as artifacts
-    # if self._checkpoint_callback:
-    # self._scan_and_log_checkpoints(self._checkpoint_callback)
-    # JamWandb.finish()
+    #     # log checkpoints as artifacts
+    #     if self._checkpoint_callback:
+    #         self._scan_and_log_checkpoints(self._checkpoint_callback)
+    #     JamWandb.finish()
 
     def _scan_and_log_checkpoints(
         self, checkpoint_callback: "ReferenceType[ModelCheckpoint]"
