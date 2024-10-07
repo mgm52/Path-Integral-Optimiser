@@ -33,7 +33,6 @@ class BaseModel(LightningModule):
     ):
         super().__init__()
         self.cfg = cfg
-        # TODO:
         self.data_ndim = cfg.data_ndim
         self.dt = cfg.dt
         self.t_end = cfg.t_end

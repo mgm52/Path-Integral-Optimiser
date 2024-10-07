@@ -30,8 +30,7 @@ from src.optimizers.pio_monte_carlo import PIOMonteCarlo
 import pdb
 
 # TODO: see if there's a better way to do this, using config & hydra
-# TODO: at the very least, rename this..!
-class MyDataModule(LightningDataModule):
+class BasicDataModule(LightningDataModule):
     def __init__(self, dataset: Dataset, batch_size: int, num_workers: int = 0):
         super().__init__()
         self.dataset = dataset
@@ -48,7 +47,6 @@ class MyDataModule(LightningDataModule):
         return DataLoader(self.dataset, batch_size=self.batch_size, num_workers=self.num_workers)
 
     def prepare_data(self):
-        # Add any data preparation logic here
         pass
 
 log = lht_utils.get_logger(__name__)
@@ -99,7 +97,7 @@ class PISBasedOptimizer:
     # Train self.model to minimize V(w)=task_weights_to_loss(w)
     def start_train_loop(self):
         self.task_next_data()
-        datamodule = MyDataModule(
+        datamodule = BasicDataModule(
             dataset=self.pis_dataset,
             batch_size=self.cfg.datamodule.dl.batch_size,
             num_workers=0)
