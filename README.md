@@ -1,6 +1,6 @@
 # Path Integral Optimiser
 
-This repository implements Schrödinger-Föllmer-diffusion-based optimisers, primarily the Path Integral Optimiser, along with several meta-learning tasks. This is for the paper [Path Integral Optimiser: Global Optimisation via Neural Schr\"odinger-F\"ollmer Diffusion](https://github.com/mgm52/Path-Integral-Optimiser/blob/master/OPT_Submission___Path_Integral_Optimiser%20-%20non-anon.pdf), which is currently in submission to [Neurips OPT 2024](https://opt-ml.org/).
+This repository implements Schrödinger-Föllmer-diffusion-based optimisers, primarily the Path Integral Optimiser, along with several meta-learning tasks. This is for the paper [Path Integral Optimiser: Global Optimisation via Neural Schr\"odinger-F\"ollmer Diffusion](https://github.com/mgm52/Path-Integral-Optimiser/blob/master/OPT_Submission___Path_Integral_Optimiser%20-%20non-anon.pdf), which was accepted to [Neurips OPT 2024](https://opt-ml.org/).
 
 ## Setup
 
