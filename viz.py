@@ -42,7 +42,7 @@ def get_training_metrics_df(dir_path):
     return None
 
 def get_final_validation_loss(dir_path):
-    log_path = os.path.join(dir_path, "pis_optim_pl.log")
+    log_path = os.path.join(dir_path, "training_coordinator.log")
     final_validation_loss = None
     if os.path.exists(log_path):
         with open(log_path, 'r') as log_file:
@@ -57,7 +57,7 @@ def get_final_validation_loss(dir_path):
     return final_validation_loss
 
 def get_final_test_loss(dir_path):
-    log_path = os.path.join(dir_path, "pis_optim_pl.log")
+    log_path = os.path.join(dir_path, "training_coordinator.log")
     final_test_loss = None
     if os.path.exists(log_path):
         with open(log_path, 'r') as log_file:
@@ -72,7 +72,7 @@ def get_final_test_loss(dir_path):
     return final_test_loss
 
 def get_first_timestamp(dir_path):
-    log_path = os.path.join(dir_path, "pis_optim_pl.log")
+    log_path = os.path.join(dir_path, "training_coordinator.log")
     first_timestamp = None
     if os.path.exists(log_path):
         with open(log_path, 'r') as log_file:
@@ -83,7 +83,7 @@ def get_first_timestamp(dir_path):
     return first_timestamp
 
 def get_final_timestamp(dir_path):
-    log_path = os.path.join(dir_path, "pis_optim_pl.log")
+    log_path = os.path.join(dir_path, "training_coordinator.log")
     if os.path.exists(log_path):
         with open(log_path, 'r') as log_file:
             lines = log_file.readlines()

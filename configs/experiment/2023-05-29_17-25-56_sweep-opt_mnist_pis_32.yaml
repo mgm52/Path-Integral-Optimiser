@@ -22,7 +22,7 @@ trainer:
   gradient_clip_algorithm: norm
 model:
   module:
-    _target_: src.models_lightning.base_model.BaseModel
+    _target_: src.models_lightning.pio_model.PIOModel
   f_func:
     _target_: jamtorch.nn.fouriermlp.FourierMLP
     in_shape: ${model.data_ndim}
@@ -34,7 +34,7 @@ model:
   sde_model:
     _target_: src.models_nn.pis_nn.PISNN
     reg_fns:
-    - src.models_lightning.base_model_loss.quad_reg
+    - src.models_lightning.pio_model_loss.quad_reg
     f_format: f
     data_shape: ${model.data_shape}
     sde_type: ito

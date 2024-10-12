@@ -19,7 +19,7 @@ def run_experiment(experiment_name, optimizer_name, extra_choice=False, mc_mega_
 
         # Define sweep command
         random_id = str(uuid.uuid4())
-        command = ["python", "src/pis_optim_pl.py", f"experiment={experiment_name}.yaml", f"model.optimizer={optimizer_name}",
+        command = ["python", "src/training_coordinator.py", f"experiment={experiment_name}.yaml", f"model.optimizer={optimizer_name}",
                 # Hyperparameters to sweep
                 "trainer.gradient_clip_val=tag(log, interval(0.01,4.95))",
                 # Sweeper config

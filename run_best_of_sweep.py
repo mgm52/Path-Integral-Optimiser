@@ -2,7 +2,7 @@ import subprocess
 import sys
 import omegaconf
 from viz import get_all_run_data
-from src.pis_optim_pl import run_with_config
+from src.training_coordinator import run_with_config
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     print(f"Gonna run with config_path: {config_path}")
 
-    python_script_path  = "src/pis_optim_pl.py"
+    python_script_path  = "src/training_coordinator.py"
     # Load basic sweeper (hacky)
     #subprocess.run(["mv", "configs/config.yaml", "configs/config_nevergrad.yaml"])
     #subprocess.run(["mv", "configs/config_basic.yaml", "configs/config.yaml"])

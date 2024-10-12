@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 
+# Overwrite NN parameters; check how this affects grads after backward()
 if __name__ == "__main__":
     
     # generate w
@@ -23,7 +24,6 @@ if __name__ == "__main__":
             p = m._parameters[param_key]
             m._parameters[param_key] = w[w_split_index:w_split_index+p.numel()].view(p.shape)
             w_split_index += p.numel()
-
 
     # forward through network
     x = torch.tensor([7.0])

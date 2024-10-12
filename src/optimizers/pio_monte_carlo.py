@@ -5,6 +5,8 @@ from torch.optim import _functional as F
 from torch.optim.optimizer import Optimizer, required
 import torch as th
 
+### WIP Function - main PIO implementation in models_lightning ###
+
 # Under the hood, Lightning does the following:
 
 #     for epoch in epochs:
@@ -193,8 +195,7 @@ class PIOMonteCarlo(Optimizer):
         nabla_f_sum = None
         for i in range(self.m_monte_carlo):
             #print(f"\nStarting MC round {i}")
-            Z = th.randn(x.numel())
-            Z = Z.to("cuda")
+            Z = th.randn(x.numel(), device=x.device)
             w = x + math.sqrt(1 - t) * Z
             if not w.requires_grad: # TODO: consider removal
                 w.requires_grad = True
@@ -204,32 +205,20 @@ class PIOMonteCarlo(Optimizer):
             nabla_f_sum = nabla_f if nabla_f_sum is None else nabla_f_sum + nabla_f
         
             del w, f, nabla_f # free up memory
-        #nabla_f_values = [self.get_nabla_f(f, x) for f in f_values]
-        nabla_f_sum = nabla_f_sum.to("cuda") # TODO: may not be necessary... or should be earlier
-
-        #print(f"sum_nabla_f: {sum_nabla_f} ")
-        #print(f"sum_f: {sum_f.item()} ")
-
         drift = nabla_f_sum / f_sum
-        #print(f"Drift = sum_nabla_f / sum_f = {drift}")
         return drift
 
     def run_trajectory(self):
-        # new_l = yield w
-
         print(f"STARTING trajectory!")
 
-        # TODO: consider how to run multiple trajectories...
-        # or i guess i can handle that later
-        # ACTUALLY: we shouldn't do multiple.
+        # Only run one trajectory.
         # in pio, traininer != inference. we do multi traj at inf because it's cheap.
         # in mc, training == inference. its too exensive to do multiple.
 
         initial_w = self.extract_parameters_1d()
 
         ts = th.linspace(0, 1, self.num_t_samples)
-        x = th.zeros(initial_w.numel())
-        x = x.to("cuda")
+        x = th.zeros(initial_w.numel(), device=initial_w.device)
         for i in range(self.num_t_samples):
             self.t = ts[i]
             #print(f"\nStarting time step {i}")
@@ -242,7 +231,6 @@ class PIOMonteCarlo(Optimizer):
             #print("Got drift, continuing")
             drift = drift * self.sigma_factor
             noise = th.randn_like(x) * math.sqrt(self.dt) * self.sqrt_sigma_factor
-            noise = noise.to("cuda") # TODO: double check if this is necessary
             x = x + drift * self.dt + noise
             x = th.nan_to_num(x) # same as PIS_NN
             self.write_1d_params(x) # not strictly necessary unless we're evaluating model mid-run
@@ -252,7 +240,6 @@ class PIOMonteCarlo(Optimizer):
         # Final state X_T!
         while True: yield x # TODO: consider replacing with actual closure use
 
-    #@torch.no_grad() # TODO: maybe comment out?
     def step(self, closure):
         """Performs a single optimization step.
 
@@ -276,4 +263,3 @@ class PIOMonteCarlo(Optimizer):
             return closure()
 
         return self.recent_losses[-1]
-        #return loss

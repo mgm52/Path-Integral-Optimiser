@@ -32,14 +32,12 @@ def loss_pis(sdeint_fn, ts, nll_target_fn, nll_prior_fn, y0, n_reg, initial_phas
     
     calculate_pis_loss = (not initial_phase) or initial_target_matching_additive
     if calculate_pis_loss:
-        # TODO: why are we dividing the mean by dim???
         reg_loss = y1[:, -n_reg].mean() / dim
         sample_nll = nll_target_fn(state).mean() / dim
         prior_nll = nll_prior_fn(state).mean() / dim
         term_loss = sample_nll - prior_nll
         loss_pis = reg_loss + term_loss
         loss += loss_pis
-
         #print(f"{'initial' if initial_phase else ''} training step: loss_init {loss_init}, loss_pis {loss_pis}")
 
     if not calculate_pis_loss:

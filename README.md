@@ -24,12 +24,12 @@ pip install .
 ## Repo Overview
 This repository uses **PyTorch Lightning** to conduct training (e.g. with metrics being Lightning callbacks); **Nevergrad** to run hyperparameter sweeps; **Hydra** to load from config files; and, optionally, **wandb** to log results. It is based on Zhang et al.'s [Path Integral Sampler](https://arxiv.org/abs/2111.15141).
 
-While SGD, Adam, Adagrad and PIS-MC (monte-carlo approximation) are directly applied as optimisers via `pis_optim_pl.py`, PIO itself has more involved Lightning setup adapted from the original PIS repo, to improve parallelisation. Rather than be treated as an optimiser, PIO is seen as an optimization _target_ whose dataset is the Boltzmann transformation of its task-solving-model's parameters. Below is an overview of how PIO is trained, broken down into sections of PISBasedOptimizer, relied on by `pis_optim_pl.py`.
+While SGD, Adam, Adagrad and PIS-MC (monte-carlo approximation) are directly applied as optimisers via `train_non_pio.py`, PIO itself has more involved Lightning setup adapted from the original PIS repo, to improve parallelisation. Rather than be treated as an optimiser, PIO is seen as an optimization _target_ whose dataset is the Boltzmann transformation of its task-solving-model's parameters. Below is an overview of how PIO is trained, broken down into sections of PISBasedOptimizer, relied on by `train_pio.py`.
 
 Defining the forward loop, and attachments to data:
 ```
 PISBasedOptimizer
-    .model: BaseModel(LightningModule)
+    .model: PIOModel(LightningModule)
         .sde_model: PISNN
             .f()
             .g()
@@ -66,10 +66,10 @@ Use run_all_results.py to queue up sweeping & seeding runs.
 python run_all_results.py
 ```
 
-This makes calls to `pis_optim_pl.py` and `viz.py`, which can also be used standalone. e.g.
+This makes calls to `training_coordinator.py` and `viz.py`, which can also be used standalone. e.g.
 
 ```
-python src/pis_optim_pl.py experiment=opt_carrillo.yaml model.optimizer=pis-mc model.m_monte_carlo=64 datamodule.dataset.sigma=0.017 model.sde_model.sigma_rescaling=static datamodule.dl.batch_size=1 model.dt=0.05 model.fig_path=/home/max/pis
+python src/training_coordinator.py experiment=opt_carrillo.yaml model.optimizer=pis-mc model.m_monte_carlo=64 datamodule.dataset.sigma=0.017 model.sde_model.sigma_rescaling=static datamodule.dl.batch_size=1 model.dt=0.05 model.fig_path=/home/max/pis
 ```
 
 ### PIS Reproduce

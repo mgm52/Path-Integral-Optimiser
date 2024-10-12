@@ -62,7 +62,7 @@ class PISNN(nn.Module):  # pylint: disable=abstract-method, too-many-instance-at
             if isinstance(data_shape, int)
             else data_shape
         )
-        # BaseModel sets grad_fn to trainer.datamodule.dataset.score (i.e. grad of NLL in target distribution).
+        # PIOModel sets grad_fn to trainer.datamodule.dataset.score (i.e. grad of NLL in target distribution).
         self.grad_fn = grad_fn
         self.g_coef = g_coef
 
